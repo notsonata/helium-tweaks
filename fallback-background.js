@@ -10,16 +10,33 @@
 (() => {
   "use strict";
 
+  const PORT_NAME = "helium-bookmarks";
   const FALLBACK_PAGE = "bookmarks.html";
   const OPEN_RETRY_MS = 50;
   const OPEN_RETRY_LIMIT = 40;
+  const connectedPorts = new Map();
+
+  /* Keep a separate, read-only routing index instead of reaching into private
+     state owned by background.js. Both listeners receive the same Port. */
+  chrome.runtime.onConnect.addListener((port) => {
+    if (port.name !== PORT_NAME) return;
+
+    const tabId = port.sender?.tab?.id;
+    if (typeof tabId !== "number") return;
+
+    connectedPorts.set(tabId, port);
+    port.onDisconnect.addListener(() => {
+      void chrome.runtime.lastError;
+      if (connectedPorts.get(tabId) === port) connectedPorts.delete(tabId);
+    });
+  });
 
   chrome.action.onClicked.addListener(async (tab) => {
     if (!tab || typeof tab.id !== "number") return;
 
     /* background.js owns normal action routing. A live port proves this tab
        already has the sidebar, including our extension-owned fallback page. */
-    if (ports.has(tab.id)) return;
+    if (connectedPorts.has(tab.id)) return;
 
     /* A page may have a content script before its long-lived port is visible.
        Give it one direct chance before falling back. This also covers ordinary
@@ -52,8 +69,8 @@
   }
 
   function openWhenConnected(tabId, attempt) {
-    const port = ports.get(tabId);
-    if (port && sendToPort(port, { type: "openAndFocus" })) return;
+    const port = connectedPorts.get(tabId);
+    if (port && postToPort(port, { type: "openAndFocus" })) return;
 
     if (attempt >= OPEN_RETRY_LIMIT) {
       console.warn(
@@ -66,5 +83,16 @@
       () => openWhenConnected(tabId, attempt + 1),
       OPEN_RETRY_MS
     );
+  }
+
+  function postToPort(port, message) {
+    try {
+      port.postMessage(message);
+      void chrome.runtime.lastError;
+      return true;
+    } catch {
+      void chrome.runtime.lastError;
+      return false;
+    }
   }
 })();
