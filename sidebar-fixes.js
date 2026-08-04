@@ -119,7 +119,7 @@
       event.stopPropagation();
     };
 
-    searchInput.addEventListener("keydown", (event) => {
+    const handleSearchKeydown = (event) => {
       if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
         event.preventDefault();
         searchInput.select();
@@ -134,7 +134,33 @@
         }
       }
       stopSearchEvent(event);
-    });
+    };
+
+    searchInput.addEventListener("keydown", handleSearchKeydown);
+
+    /* Capture at the window boundary too. Because this prelude runs at
+       document_start, it is installed before normal webpage shortcut handlers.
+       Stopping propagation does not cancel ordinary text-entry default actions. */
+    window.addEventListener(
+      "keydown",
+      (event) => {
+        if (shadowRoot?.activeElement === searchInput) {
+          handleSearchKeydown(event);
+        }
+      },
+      true
+    );
+    for (const eventName of ["keyup", "keypress"]) {
+      window.addEventListener(
+        eventName,
+        (event) => {
+          if (shadowRoot?.activeElement === searchInput) {
+            stopSearchEvent(event);
+          }
+        },
+        true
+      );
+    }
 
     for (const eventName of [
       "keyup",
