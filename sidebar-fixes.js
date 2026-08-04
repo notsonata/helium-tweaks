@@ -2,8 +2,8 @@
   Interaction and layout corrections loaded before content.js.
 
   This prelude is intentionally narrow. It does not render the sidebar itself;
-  it corrects browser-control, keyboard, persistence, and hierarchy behavior in
-  the existing content script.
+  it corrects browser-control, keyboard, persistence, hierarchy, and hover
+  behavior in the existing content script.
 */
 
 (() => {
@@ -101,11 +101,62 @@
     const searchInput = shadowRoot.getElementById("searchInput");
     const pinButton = shadowRoot.getElementById("pinButton");
     const foldersRoot = shadowRoot.getElementById("folders");
+    const edgeTrigger = shadowRoot.getElementById("edgeTrigger");
+    const sidebarShell = shadowRoot.getElementById("sidebarShell");
+    const sidebar = shadowRoot.getElementById("sidebar");
 
-    if (!searchInput || !pinButton || !foldersRoot) {
+    if (
+      !searchInput ||
+      !pinButton ||
+      !foldersRoot ||
+      !edgeTrigger ||
+      !sidebarShell ||
+      !sidebar
+    ) {
       queueMicrotask(setupSidebarCorrections);
       return;
     }
+
+    /* The panel slides beneath the pointer when it opens. That movement can
+       generate a mouseleave even though the pointer is still inside the final
+       panel or the right-edge trigger. Block only those false leaves. Genuine
+       exits to the webpage still reach content.js's normal close handler. */
+    const pointInside = (x, y, rect) =>
+      x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+
+    sidebar.addEventListener(
+      "mouseleave",
+      (event) => {
+        const x = event.clientX;
+        const y = event.clientY;
+        const stillInSidebarRegion =
+          pointInside(x, y, sidebarShell.getBoundingClientRect()) ||
+          pointInside(x, y, edgeTrigger.getBoundingClientRect());
+
+        if (stillInSidebarRegion) {
+          event.stopImmediatePropagation();
+          event.stopPropagation();
+        }
+      },
+      true
+    );
+
+    /* Entering the edge strip must also cancel any close timer that was started
+       just before the pointer crossed from the panel into the strip. Reuse the
+       sidebar's existing mouseenter behavior so the private timer stays owned
+       by content.js. */
+    edgeTrigger.addEventListener(
+      "mouseenter",
+      () => {
+        sidebar.dispatchEvent(
+          new MouseEvent("mouseenter", {
+            bubbles: false,
+            composed: false,
+          })
+        );
+      },
+      true
+    );
 
     /* A search input receives a built-in Chromium clear button. content.js also
        renders its own clear button, producing two X controls. Text input keeps
