@@ -28,7 +28,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["sidebar-fixes.js", "content.js"],
+      "js": ["sidebar-fixes.js", "hover-controller.js", "content.js"],
       "run_at": "document_start",
       "all_frames": false
     }
