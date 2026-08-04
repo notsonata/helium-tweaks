@@ -150,8 +150,12 @@ async function initPort(port) {
   }
 
   try {
+    // Always send the shortcut label (even if empty) so the content script can
+    // update its badge to reflect the real configured state. An empty label
+    // means the user cleared/conflicted the binding; the content script falls
+    // back to the manifest's suggested default for display.
     const label = await getShortcutLabel();
-    if (label) sendToPort(port, { type: "shortcut", label });
+    sendToPort(port, { type: "shortcut", label });
   } catch {
     /* non-fatal */
   }

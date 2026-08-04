@@ -743,18 +743,26 @@
   }
 
   // ----- keyboard shortcut badge -----------------------------------------
-  // The badge starts hidden (class "hidden" in the markup) and is only revealed
-  // once the background sends the real configured shortcut. It's hidden again
-  // while the user is typing in the search field (so it doesn't sit under the
-  // clear button), matching the template's behavior.
-  let currentShortcut = "";
+  // The badge shows the keyboard shortcut that opens the sidebar + focuses
+  // search. We render a platform-appropriate default immediately (don't wait
+  // for the background), then update it with the real configured binding once
+  // the service worker reports it. If the user cleared/conflicted the binding,
+  // the background sends an empty label and we fall back to the default for
+  // display. Hidden while the user is typing (so it doesn't sit under clear).
+  const IS_MAC =
+    typeof navigator !== "undefined" &&
+    /mac/i.test(navigator.platform || navigator.userAgent || "");
+  const DEFAULT_SHORTCUT = IS_MAC ? "Command+Shift+K" : "Ctrl+Shift+K";
+  let currentShortcut = DEFAULT_SHORTCUT;
+
   function setShortcutBadge(rawLabel) {
-    currentShortcut = rawLabel || "";
+    // Empty/missing label from the background means "no real binding reported"
+    // — fall back to the manifest default so the badge still shows something.
+    currentShortcut = rawLabel && rawLabel.trim() ? rawLabel : DEFAULT_SHORTCUT;
     const badge = ref("searchShortcut");
     const formatted = formatShortcut(currentShortcut);
     badge.textContent = formatted;
     const typing = searchQuery.trim().length > 0;
-    // Hide when there's no real shortcut, or while the user is typing.
     badge.classList.toggle("hidden", !formatted || typing);
   }
 
@@ -908,6 +916,9 @@
     await loadState();
     // Reflect loaded pinned state in the button.
     setPinned(pinned, false);
+    // Render the shortcut badge immediately with the platform default, so it's
+    // visible before (or even if) the background reports the real binding.
+    setShortcutBadge(DEFAULT_SHORTCUT);
     connectPort();
     render();
     wireEvents();
