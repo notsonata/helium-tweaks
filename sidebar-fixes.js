@@ -1,9 +1,9 @@
 /*
   Interaction and layout corrections loaded before content.js.
 
-  This prelude is intentionally narrow. It does not render the sidebar itself;
-  it corrects browser-control, keyboard, persistence, hierarchy, and hover
-  behavior in the existing content script.
+  This prelude stays deliberately narrow. It corrects browser-control,
+  keyboard, persistence-startup, pin alignment, and flat folder presentation
+  without owning the sidebar's state.
 */
 
 (() => {
@@ -13,27 +13,25 @@
   const BROWSER_ROOT_IDS = new Set(["1", "2", "3"]);
 
   let shadowRoot = null;
-  let initialCollapsedState = null;
   let bookmarkTreeReceived = false;
-  let restoringCollapsedState = false;
   let flattenScheduled = false;
   let flattening = false;
 
-  /* Preserve the user's saved folder state during content.js's initial empty
-     render. The original render prunes every saved folder before the bookmark
-     tree arrives. Ignore only that premature empty write, then restore the
-     saved map as soon as the first bookmark payload is received. */
-  const nativeStorageGet = chrome.storage.local.get.bind(chrome.storage.local);
+  /*
+    content.js loads persisted state before bookmark data arrives, then performs
+    one empty render. Its deleted-folder cleanup sees an empty bookmark tree and
+    would erase every saved folder id. Suppress only that premature empty write.
+
+    There is intentionally no per-page snapshot or restore write here. The
+    previous implementation restored a stale snapshot after the first bookmark
+    message, allowing a refreshed tab to overwrite newer state from another
+    page. Once a real tree has arrived, content.js may prune genuinely deleted
+    folder ids normally. chrome.storage.onChanged remains the single source of
+    cross-page synchronization.
+  */
   const nativeStorageSet = chrome.storage.local.set.bind(chrome.storage.local);
 
-  nativeStorageGet([STORAGE_COLLAPSED], (result) => {
-    const value = result?.[STORAGE_COLLAPSED];
-    initialCollapsedState =
-      value && typeof value === "object" ? { ...value } : {};
-    maybeRestoreCollapsedState();
-  });
-
-  chrome.storage.local.set = function patchedStorageSet(items, callback) {
+  chrome.storage.local.set = function guardedStorageSet(items, callback) {
     const next = items?.[STORAGE_COLLAPSED];
     const isPrematureEmptyPrune =
       !bookmarkTreeReceived &&
@@ -49,34 +47,14 @@
     return nativeStorageSet(items, callback);
   };
 
-  function maybeRestoreCollapsedState() {
-    if (
-      restoringCollapsedState ||
-      !bookmarkTreeReceived ||
-      initialCollapsedState === null
-    ) {
-      return;
-    }
-
-    restoringCollapsedState = true;
-    nativeStorageSet(
-      { [STORAGE_COLLAPSED]: initialCollapsedState },
-      () => {
-        restoringCollapsedState = false;
-      }
-    );
-  }
-
-  /* Observe the first bookmark payload without wrapping or replacing Port
-     objects. content.js keeps the real Port and all of its normal lifecycle. */
+  /* Mark persistence as ready before content.js handles the first bookmark
+     payload and calls render(), so its normal deleted-folder cleanup is safe. */
   const nativeConnect = chrome.runtime.connect.bind(chrome.runtime);
-  chrome.runtime.connect = function patchedConnect(...args) {
+  chrome.runtime.connect = function observedConnect(...args) {
     const port = nativeConnect(...args);
     port.onMessage.addListener((message) => {
       if (message?.type === "bookmarks" && Array.isArray(message.tree)) {
         bookmarkTreeReceived = true;
-        maybeRestoreCollapsedState();
-        scheduleFlatten();
       }
     });
     return port;
@@ -85,7 +63,7 @@
   /* Capture only the extension's closed shadow root, then immediately restore
      attachShadow so no later component is affected. */
   const nativeAttachShadow = Element.prototype.attachShadow;
-  Element.prototype.attachShadow = function patchedAttachShadow(init) {
+  Element.prototype.attachShadow = function capturedAttachShadow(init) {
     const root = nativeAttachShadow.call(this, init);
     if (!shadowRoot) {
       shadowRoot = root;
@@ -101,66 +79,15 @@
     const searchInput = shadowRoot.getElementById("searchInput");
     const pinButton = shadowRoot.getElementById("pinButton");
     const foldersRoot = shadowRoot.getElementById("folders");
-    const edgeTrigger = shadowRoot.getElementById("edgeTrigger");
-    const sidebarShell = shadowRoot.getElementById("sidebarShell");
-    const sidebar = shadowRoot.getElementById("sidebar");
 
-    if (
-      !searchInput ||
-      !pinButton ||
-      !foldersRoot ||
-      !edgeTrigger ||
-      !sidebarShell ||
-      !sidebar
-    ) {
+    if (!searchInput || !pinButton || !foldersRoot) {
       queueMicrotask(setupSidebarCorrections);
       return;
     }
 
-    /* The panel slides beneath the pointer when it opens. That movement can
-       generate a mouseleave even though the pointer is still inside the final
-       panel or the right-edge trigger. Block only those false leaves. Genuine
-       exits to the webpage still reach content.js's normal close handler. */
-    const pointInside = (x, y, rect) =>
-      x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-
-    sidebar.addEventListener(
-      "mouseleave",
-      (event) => {
-        const x = event.clientX;
-        const y = event.clientY;
-        const stillInSidebarRegion =
-          pointInside(x, y, sidebarShell.getBoundingClientRect()) ||
-          pointInside(x, y, edgeTrigger.getBoundingClientRect());
-
-        if (stillInSidebarRegion) {
-          event.stopImmediatePropagation();
-          event.stopPropagation();
-        }
-      },
-      true
-    );
-
-    /* Entering the edge strip must also cancel any close timer that was started
-       just before the pointer crossed from the panel into the strip. Reuse the
-       sidebar's existing mouseenter behavior so the private timer stays owned
-       by content.js. */
-    edgeTrigger.addEventListener(
-      "mouseenter",
-      () => {
-        sidebar.dispatchEvent(
-          new MouseEvent("mouseenter", {
-            bubbles: false,
-            composed: false,
-          })
-        );
-      },
-      true
-    );
-
-    /* A search input receives a built-in Chromium clear button. content.js also
-       renders its own clear button, producing two X controls. Text input keeps
-       only the explicit right-side control. */
+    /* Chromium supplies its own cancel control for type=search. content.js also
+       renders an explicit clear button, so use text input and keep only the
+       designed right-side control. */
     searchInput.type = "text";
 
     /* Keep search keystrokes inside the extension. Without this, composed
@@ -189,9 +116,7 @@
 
     searchInput.addEventListener("keydown", handleSearchKeydown);
 
-    /* Capture at the window boundary too. Because this prelude runs at
-       document_start, it is installed before normal webpage shortcut handlers.
-       Stopping propagation does not cancel ordinary text-entry default actions. */
+    /* Installed at document_start, before ordinary page shortcut handlers. */
     window.addEventListener(
       "keydown",
       (event) => {
@@ -201,6 +126,7 @@
       },
       true
     );
+
     for (const eventName of ["keyup", "keypress"]) {
       window.addEventListener(
         eventName,
@@ -224,14 +150,13 @@
       searchInput.addEventListener(eventName, stopSearchEvent);
     }
 
-    /* Allow content.js's same-target input handler to update the result list,
-       but stop the input event before it reaches the webpage. */
+    /* Same-target content.js input listeners still run; the event simply does
+       not escape the shadow UI and trigger webpage behavior. */
     searchInput.addEventListener("input", (event) => {
       event.stopPropagation();
     });
 
-    /* The existing CSS nudges the asymmetric icon down and relies on grid
-       centering. Position the glyph from its actual center in both axes. */
+    /* Center the asymmetric pin glyph from its geometric midpoint. */
     pinButton.style.position = "relative";
     pinButton.style.display = "block";
     const pinIcon = pinButton.querySelector("svg");
@@ -294,7 +219,9 @@
           ).length
         : 0;
 
-      const count = folder.querySelector(":scope > .folder-header .folder-count");
+      const count = folder.querySelector(
+        ":scope > .folder-header .folder-count"
+      );
       if (count) count.textContent = String(directBookmarks);
 
       /* Empty Chromium root containers add no information once their child

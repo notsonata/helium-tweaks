@@ -4,7 +4,7 @@ A right-edge bookmark sidebar overlay for the **Helium browser** and other Chrom
 
 The extension does not use Chromium's native Side Panel API. It renders an overlay inside a closed Shadow DOM so webpage styles cannot affect it and page scripts cannot read the bookmark titles or URLs rendered inside it.
 
-The visual design follows the `helium-bookmarks-sidebar-210-v10.html` prototype, including the 210 px panel, compact rows, overflow fade, colors, typography, radii, and timing.
+The visual design follows the `helium-bookmarks-sidebar-210-v10.html` prototype, including the 210 px panel, compact rows, overflow fade, colors, typography, and radii. Hover motion follows Helium's native Zen Mode side-chrome timing.
 
 ## Load it unpacked
 
@@ -32,11 +32,12 @@ The bookmark UI is rendered in a **closed Shadow DOM**. Page JavaScript receives
 
 ## Behavior
 
-- **Hover open:** move the pointer to the far-right page edge. Passive hover does not move keyboard focus away from the webpage.
+- **Hover open:** move the pointer to the far-right page edge. Reveal starts immediately and passive hover does not move keyboard focus away from the webpage.
+- **Motion:** the sidebar uses Helium's 200 ms side-chrome animation and easing.
 - **Toolbar or shortcut open:** opens the panel and focuses/selects the search field.
-- **Auto-hide:** closes about 140 ms after the pointer leaves when unpinned.
+- **Auto-hide:** starts after a 150 ms hover-exit grace period when unpinned. Leaving the browser window uses Helium's longer three-second grace period.
 - **Pin:** the footer button keeps the sidebar open and persists across restarts.
-- **Folders:** every folder is a collapsible section. Nested folders are nested sections. Collapse state is remembered by bookmark folder ID.
+- **Folders:** every bookmark folder is an independent top-level collapsible section. Collapse state is remembered by stable bookmark folder ID and synchronized across open webpages.
 - **Search:** matches bookmark titles, URLs, folder titles, and folder paths. Search temporarily ignores stored collapse state.
 - **Escape:** clears an active query first, then closes an unpinned sidebar.
 - **Links:** normal click, Command/Ctrl-click, middle-click, and Shift-click retain native browser behavior.
@@ -64,9 +65,13 @@ The extension does **not** request `/favicon.ico` from bookmarked websites and d
 
 ## Live updates and extension reloads
 
-Bookmark events are debounced and pushed from the Manifest V3 service worker to connected tabs over a long-lived port. The content script reconnects with capped exponential backoff when the service worker is temporarily suspended.
+On an ordinary new HTTP or HTTPS page, the content script connects automatically and the service worker immediately pushes the current bookmark tree. A normal page load should not require a manual refresh.
 
-Reloading an unpacked extension is different: content scripts already present in open tabs retain a permanently invalid runtime context. The stale script now treats that condition as terminal, cancels reconnect timers, removes its old sidebar host, and does not repeatedly call invalidated extension APIs. Refresh the page once to inject the newly loaded extension version.
+Bookmark changes are debounced and pushed to connected tabs over a long-lived port. The content script reconnects with capped exponential backoff when the Manifest V3 service worker is temporarily suspended.
+
+Reloading or updating an unpacked extension is different. Chromium does not reinject the updated content scripts into tabs that were already open. Those tabs keep the old, permanently invalid runtime context, so they must be refreshed once after each extension reload. This is normal during development and is not required for every later page navigation.
+
+The stale script treats an invalidated context as terminal, cancels reconnect timers, removes its old sidebar host, and does not repeatedly call invalid extension APIs.
 
 ## Browser limitations
 
@@ -88,10 +93,12 @@ Stored in `chrome.storage.local`:
 
 | Key | Meaning |
 |---|---|
-| `heliumBmSidebar:collapsed:v1` | Per-folder collapsed state keyed by bookmark folder ID. |
+| `heliumBmSidebar:collapsed:v1` | Per-folder collapsed state keyed by bookmark folder ID. Shared across all webpages in the browser profile. |
 | `heliumBmSidebar:pinned:v1` | Whether the sidebar is pinned. |
 
-Search text, hover state, and selected bookmark rows are not persisted. State for deleted folders is pruned during a normal render.
+Every open page listens to `chrome.storage.onChanged`, so a folder collapsed on one webpage is reflected on the others. Startup does not prune stored folder IDs until the first real bookmark tree has arrived. Only state for folders confirmed to be deleted is removed.
+
+Search text, hover state, and selected bookmark rows are not persisted.
 
 ## Architecture
 
@@ -99,6 +106,8 @@ Search text, hover state, and selected bookmark rows are not persisted. State fo
 helium-tweaks/
 ├── manifest.json
 ├── background.js
+├── hover-controller.js
+├── sidebar-fixes.js
 ├── content.js
 ├── sidebar.css
 ├── README.md
@@ -111,11 +120,15 @@ helium-tweaks/
     └── icon-128.png
 ```
 
-`background.js` owns bookmark access, listens to bookmark events, reports the configured shortcut, and routes toolbar/command activation to tabs. `content.js` owns rendering and interaction inside the closed Shadow DOM. No polling, remote scripts, framework, build step, or third-party runtime dependency is used.
+`background.js` owns bookmark access, listens to bookmark events, reports the configured shortcut, and routes toolbar/command activation to tabs. `content.js` owns rendering and interaction inside the closed Shadow DOM. `hover-controller.js` provides a transform-independent hover state machine. `sidebar-fixes.js` contains narrowly scoped compatibility corrections for startup persistence, keyboard isolation, pin alignment, and flat folder presentation.
+
+No polling, remote scripts, framework, build step, or third-party runtime dependency is used.
 
 ## Troubleshooting
 
 - **`Extension context invalidated`:** refresh the affected webpage after reloading the unpacked extension. The old content script cannot be revived by Chromium.
+- **Bookmarks are missing immediately after an extension reload:** refresh that already-open tab once. Newly opened or normally navigated HTTP/HTTPS pages should load bookmarks automatically.
+- **A newly opened HTTP/HTTPS page still needs refreshing without a recent extension reload:** inspect the content-script and service-worker consoles. That is not expected behavior.
 - **Sidebar does not appear:** confirm the page uses HTTP or HTTPS and refresh tabs that predate installation or reload.
 - **Shortcut does not work:** assign a non-conflicting binding in the browser's extension-shortcuts page.
 - **A favicon shows a letter:** Chromium does not have a cached favicon for that URL. The extension intentionally does not fetch the bookmarked site directly.
