@@ -673,8 +673,14 @@
     }
   }
 
+  /** True while we are intentionally disconnecting the port (e.g. pagehide for
+   *  bfcache). Suppresses the reconnect-on-disconnect path so a self-initiated
+   *  teardown doesn't immediately schedule a new connection. */
+  let selfDisconnecting = false;
+
   function connectPort() {
     try {
+      selfDisconnecting = false;
       port = chrome.runtime.connect({ name: PORT_NAME });
       portDead = false;
       // A successful message resets the backoff: the connection is healthy.
@@ -686,12 +692,13 @@
         void chrome.runtime.lastError;
         port = null;
         portDead = true;
-        // Schedule an automatic reconnect so a pinned sidebar keeps receiving
-        // live updates even when the user never re-triggers the edge-hover path.
-        scheduleReconnect();
+        // Only auto-reconnect for drops we did not cause ourselves. A
+        // self-disconnect (pagehide) is followed by a pageshow reconnect instead.
+        if (!selfDisconnecting) scheduleReconnect();
       });
     } catch (err) {
       // Runtime context may be gone; try again after backoff.
+      void chrome.runtime.lastError;
       port = null;
       portDead = true;
       scheduleReconnect();
@@ -836,6 +843,39 @@
     // Recompute overflow fades on viewport resize.
     const resizeObserver = new ResizeObserver(() => updateOverflowFades());
     resizeObserver.observe(ref("scroll"));
+
+    // Back/forward cache handling. When a page is frozen for bfcache, the
+    // extension port's message channel is torn down by the system and Chrome
+    // logs "Unchecked runtime.lastError ... moved into back/forward cache".
+    // To avoid that, we proactively disconnect the port ourselves on pagehide
+    // (a clean disconnect produces no error), and reconnect when the page is
+    // restored from bfcache via pageshow.
+    window.addEventListener("pagehide", (event) => {
+      // Covers both true navigations and bfcache freeze.
+      teardownPort();
+    });
+    window.addEventListener("pageshow", (event) => {
+      // event.persisted is true when restored from bfcache.
+      if (event.persisted) ensureConnected();
+    });
+  }
+
+  /** Cleanly close the current port without triggering the bfcache lastError.
+   *  Cancels any pending reconnect so we don't immediately re-grab a port. */
+  function teardownPort() {
+    clearTimeout(reconnectTimer);
+    reconnecting = false;
+    if (port) {
+      selfDisconnecting = true; // suppress reconnect from our own disconnect
+      try {
+        port.disconnect();
+      } catch {
+        /* already gone */
+      }
+      void chrome.runtime.lastError;
+      port = null;
+      portDead = true;
+    }
   }
 
   // ----- bootstrap --------------------------------------------------------
