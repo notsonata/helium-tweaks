@@ -79,9 +79,13 @@ async function getShortcutLabel() {
 function sendToPort(port, message) {
   try {
     port.postMessage(message);
+    // Reading lastError clears the "Unchecked runtime.lastError" warning that
+    // Chrome otherwise logs when the port died (e.g. the page entered bfcache).
+    void chrome.runtime.lastError;
     return true;
   } catch (err) {
-    // Port already closed (tab navigated, extension reloaded, etc.) — expected.
+    // Port already closed (tab navigated, bfcache, extension reloaded) — expected.
+    void chrome.runtime.lastError;
     return false;
   }
 }
@@ -129,8 +133,11 @@ async function initPort(port) {
 
   ports.set(tabId, port);
   // Identity check: if a replacement port connected before this disconnect
-  // fired, leave the newer port in place.
+  // fired, leave the newer port in place. Reading lastError prevents Chrome
+  // from logging "Unchecked runtime.lastError" when the port closed because the
+  // page entered back/forward cache, navigated, or the SW went idle.
   port.onDisconnect.addListener(() => {
+    void chrome.runtime.lastError;
     if (ports.get(tabId) === port) ports.delete(tabId);
   });
 
@@ -199,8 +206,10 @@ async function openSidebarInTab(tab) {
     if (!tab.url || /^https?:/i.test(tab.url) || /^file:/i.test(tab.url)) {
       try {
         await chrome.tabs.sendMessage(tab.id, { type: "openAndFocus" });
+        void chrome.runtime.lastError;
       } catch {
-        /* expected on restricted pages or before injection */
+        // Expected on restricted pages or before the content script injects.
+        void chrome.runtime.lastError;
       }
     }
   } catch (err) {

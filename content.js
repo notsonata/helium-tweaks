@@ -680,12 +680,14 @@
       // A successful message resets the backoff: the connection is healthy.
       port.onMessage.addListener(handleMessage);
       port.onDisconnect.addListener(() => {
+        // Consume lastError so Chrome doesn't log "Unchecked runtime.lastError"
+        // when the port closed because the page entered back/forward cache, the
+        // SW went idle, or the extension was reloaded.
+        void chrome.runtime.lastError;
         port = null;
         portDead = true;
-        // Context invalidated (extension reloaded), tab navigating, or the MV3
-        // service worker went idle and tore the port down. Schedule an
-        // automatic reconnect so a pinned sidebar keeps receiving live updates
-        // even when the user never re-triggers the edge-hover path.
+        // Schedule an automatic reconnect so a pinned sidebar keeps receiving
+        // live updates even when the user never re-triggers the edge-hover path.
         scheduleReconnect();
       });
     } catch (err) {
