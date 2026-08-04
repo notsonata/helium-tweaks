@@ -74,6 +74,8 @@
   right: 0;
   width: 6px;
   height: 100vh;
+  /* Host is pointer-events:none so it never blocks the page; re-enable here. */
+  pointer-events: auto;
 }
 
 .sidebar-shell {
@@ -375,6 +377,9 @@
   transform: scale(.994);
 }
 
+/* The dark background + inset shadow only make sense for the letter-avatar
+   fallback. Once a real favicon <img> loads, clear them so the icon shows
+   cleanly with no grey overlay. */
 .favicon {
   display: grid;
   width: 18px;
@@ -395,6 +400,12 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+}
+
+/* A loaded favicon replaces the fallback styling. */
+.favicon:has(img) {
+  background: transparent;
+  box-shadow: none;
 }
 
 .bookmark-title {

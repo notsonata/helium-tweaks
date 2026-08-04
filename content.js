@@ -69,8 +69,11 @@
   // from page scripts, and an unmarked host avoids giving pages a handle to
   // probe for the extension's presence.
   // The host must not affect page layout or intercept page pointer events.
+  // NOTE: do NOT use `all: initial` here — it would reset inherited properties
+  // like font-family that we set on :host, so the shadow DOM would fall back to
+  // the browser default font instead of Helvetica. Reset layout properties only.
   host.style.cssText =
-    "all: initial; margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; width: 0 !important; height: 0 !important; top: 0 !important; left: 0 !important; position: static !important;";
+    "margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; width: 0 !important; height: 0 !important; top: 0 !important; left: 0 !important; position: static !important; pointer-events: none;";
   // Closed mode: page scripts cannot reach host.shadowRoot, so bookmark titles
   // and URLs rendered inside the sidebar stay private from the page.
   const shadow = host.attachShadow({ mode: "closed" });
