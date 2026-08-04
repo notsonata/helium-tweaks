@@ -6,6 +6,14 @@
   passes beneath a stationary pointer and emits false enter/leave events. This
   controller captures the four content.js hover callbacks before registration
   and invokes them from one viewport-coordinate state machine instead.
+
+  Timing mirrors Helium's native Zen Mode side chrome:
+    - no reveal delay
+    - 200 ms slide animation
+    - 150 ms hover-exit grace period
+    - 3000 ms browser-window exit grace period
+    - 6 px edge trigger and 8 px hover leeway
+    - Chromium FAST_OUT_SLOW_IN_3 easing: cubic-bezier(0.2, 0, 0, 1)
 */
 
 (() => {
@@ -14,9 +22,17 @@
   const PANEL_WIDTH_FALLBACK = 210;
   const PANEL_INSET_FALLBACK = 5;
   const EDGE_WIDTH_FALLBACK = 6;
+  const HOVER_LEEWAY_PX = 8;
+
+  const HELIUM_REVEAL_DELAY_MS = 0;
+  const HELIUM_HOVER_EXIT_GRACE_MS = 150;
+  const HELIUM_CURSOR_EXIT_GRACE_MS = 3000;
+  const LEGACY_HOVER_TIMER_MS = 140;
+
   const CAPTURE_TIMEOUT_MS = 15000;
 
   const nativeAddEventListener = EventTarget.prototype.addEventListener;
+  const nativeSetTimeout = window.setTimeout.bind(window);
 
   let shadowRoot = null;
   let edgeTrigger = null;
@@ -133,6 +149,7 @@
     controllerStarted = true;
     clearTimeout(captureTimeout);
     restorePrototype();
+    installHeliumMotionStyle();
     startController();
   }
 
@@ -140,6 +157,39 @@
     if (EventTarget.prototype.addEventListener !== nativeAddEventListener) {
       EventTarget.prototype.addEventListener = nativeAddEventListener;
     }
+  }
+
+  function installHeliumMotionStyle() {
+    if (!shadowRoot || shadowRoot.getElementById("heliumMotionTiming")) return;
+
+    const style = document.createElement("style");
+    style.id = "heliumMotionTiming";
+    style.textContent = `
+      .sidebar-shell {
+        opacity: 1 !important;
+        visibility: hidden;
+        will-change: transform;
+        transition:
+          transform 200ms cubic-bezier(.2, 0, 0, 1),
+          visibility 0s linear 200ms !important;
+      }
+
+      .sidebar-shell.open {
+        opacity: 1 !important;
+        visibility: visible;
+        transition:
+          transform 200ms cubic-bezier(.2, 0, 0, 1),
+          visibility 0s linear 0s !important;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .sidebar-shell,
+        .sidebar-shell.open {
+          transition: none !important;
+        }
+      }
+    `;
+    shadowRoot.appendChild(style);
   }
 
   function startController() {
@@ -174,8 +224,8 @@
     }
 
     nativeAddEventListener.call(window, "resize", reconcilePointerState, true);
-    nativeAddEventListener.call(window, "blur", leaveAllRegions, true);
-    nativeAddEventListener.call(document, "mouseleave", leaveAllRegions, true);
+    nativeAddEventListener.call(window, "blur", leaveBrowserWindow, true);
+    nativeAddEventListener.call(document, "mouseleave", leaveBrowserWindow, true);
 
     /* Recover when the cursor was already resting on the edge before the four
        content.js callbacks finished registering. */
@@ -203,7 +253,7 @@
       if (pointerInsideOpenRegion()) {
         enterOpenRegion();
       } else {
-        leaveOpenRegion();
+        leaveOpenRegion(HELIUM_HOVER_EXIT_GRACE_MS);
       }
       return;
     }
@@ -212,8 +262,7 @@
 
     if (activationArmed) {
       /* Once the edge has armed opening, the pointer may continue into the
-         future 210 px panel footprint during the 140 ms delay. Requiring it to
-         remain inside a 6 px strip made normal cursor movement cancel opening. */
+         future panel footprint without cancelling the immediate reveal. */
       if (!pointerInsideOpenRegion()) cancelArmedOpen();
       return;
     }
@@ -225,10 +274,14 @@
     if (activationArmed) return;
     activationArmed = true;
 
-    /* The content script owns both timers. Entering either hover zone first
-       clears any pending close, then schedules the normal delayed open. */
+    /* Cancel any pending close before starting Helium's immediate reveal. */
     invoke(sidebarEnterHandler, sidebar, "mouseenter");
-    invoke(edgeEnterHandler, edgeTrigger, "mouseenter");
+    invokeWithHoverDelay(
+      edgeEnterHandler,
+      edgeTrigger,
+      "mouseenter",
+      HELIUM_REVEAL_DELAY_MS
+    );
   }
 
   function cancelArmedOpen() {
@@ -243,19 +296,24 @@
     invoke(sidebarEnterHandler, sidebar, "mouseenter");
   }
 
-  function leaveOpenRegion() {
+  function leaveOpenRegion(delayMs = HELIUM_HOVER_EXIT_GRACE_MS) {
     if (!openRegionActive) return;
     openRegionActive = false;
 
-    /* Cancel any leftover open timer before starting the normal close timer. */
+    /* Cancel any leftover open timer before starting the requested grace period. */
     invoke(edgeLeaveHandler, edgeTrigger, "mouseleave");
-    invoke(sidebarLeaveHandler, sidebar, "mouseleave");
+    invokeWithHoverDelay(
+      sidebarLeaveHandler,
+      sidebar,
+      "mouseleave",
+      delayMs
+    );
   }
 
-  function leaveAllRegions() {
+  function leaveBrowserWindow() {
     pointerKnown = false;
     cancelArmedOpen();
-    if (shellOpen) leaveOpenRegion();
+    if (shellOpen) leaveOpenRegion(HELIUM_CURSOR_EXIT_GRACE_MS);
   }
 
   function pointerInsideEdge() {
@@ -283,15 +341,16 @@
       "--panel-inset",
       PANEL_INSET_FALLBACK
     );
-    const left = window.innerWidth - panelWidth - panelInset;
+    const left =
+      window.innerWidth - panelWidth - panelInset - HOVER_LEEWAY_PX;
 
-    /* Include the visual 5 px inset and rounded-corner gaps. They are part of
-       the intended interaction corridor even though they are transparent. */
+    /* Helium gives the revealed chrome a small hover leeway to prevent tiny
+       pointer excursions from immediately starting the hide grace period. */
     return (
       pointerX >= left &&
       pointerX <= window.innerWidth &&
-      pointerY >= 0 &&
-      pointerY <= window.innerHeight
+      pointerY >= -HOVER_LEEWAY_PX &&
+      pointerY <= window.innerHeight + HOVER_LEEWAY_PX
     );
   }
 
@@ -301,6 +360,26 @@
       .trim();
     const parsed = Number.parseFloat(value);
     return Number.isFinite(parsed) ? parsed : fallback;
+  }
+
+  function invokeWithHoverDelay(handler, target, type, replacementDelay) {
+    const previousSetTimeout = window.setTimeout;
+
+    window.setTimeout = function heliumTimedSetTimeout(
+      callback,
+      delay,
+      ...args
+    ) {
+      const actualDelay =
+        Number(delay) === LEGACY_HOVER_TIMER_MS ? replacementDelay : delay;
+      return nativeSetTimeout(callback, actualDelay, ...args);
+    };
+
+    try {
+      invoke(handler, target, type);
+    } finally {
+      window.setTimeout = previousSetTimeout;
+    }
   }
 
   function invoke(handler, target, type) {
