@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Helium Bookmarks Sidebar",
-  "version": "1.3.0",
-  "description": "A right-edge bookmark sidebar overlay for Helium with editing, drag-and-drop organization, and real Chromium bookmarks.",
+  "version": "1.4.0",
+  "description": "A right-edge bookmark sidebar for Helium with editing, drag-and-drop organization, and a fallback page for restricted browser tabs.",
   "permissions": ["bookmarks", "storage", "favicon"],
   "background": {
     "service_worker": "service-worker.js"
