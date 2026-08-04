@@ -26,7 +26,8 @@
   const PORT_NAME = "helium-bookmarks";
   const STORAGE_COLLAPSED = "heliumBmSidebar:collapsed:v1";
   const STORAGE_PINNED = "heliumBmSidebar:pinned:v1";
-  const CLOSE_DELAY_MS = 140; // exact template value
+  const CLOSE_DELAY_MS = 140; // leave-delay, template value
+  const OPEN_DELAY_MS = 140; // enter-delay, mirrors CLOSE_DELAY_MS for symmetric feel
 
   // Bookmarks bar / Other bookmarks / Mobile bookmarks appear untitled or
   // with generic titles depending on locale. Map a few well-known ids/titles
@@ -48,6 +49,7 @@
   let searchQuery = "";
 
   let closeTimer = null;
+  let openTimer = null;
   let toastTimer = null;
   let port = null;
   let portDead = false;
@@ -79,7 +81,7 @@
             class="search"
             id="searchInput"
             type="search"
-            placeholder="Search bookmarks"
+            placeholder="Search"
             autocomplete="off"
             spellcheck="false"
             aria-label="Search bookmarks"
@@ -123,7 +125,6 @@
                   stroke-linecap="round"/>
               </svg>
             </button>
-            <span>Bookmarks</span>
           </div>
 
           <span class="footer-shortcuts">
@@ -208,14 +209,33 @@
   // ----- open / close / pin (template behavior) --------------------------
   function setOpen(open) {
     const shell = ref("sidebarShell");
+    if (open) {
+      clearTimeout(closeTimer);
+    } else {
+      clearTimeout(openTimer);
+    }
     shell.classList.toggle("open", open);
-    if (open) clearTimeout(closeTimer);
   }
 
   function scheduleClose() {
     clearTimeout(closeTimer);
     if (pinned) return;
     closeTimer = setTimeout(() => setOpen(false), CLOSE_DELAY_MS);
+  }
+
+  /**
+   * Schedule the sidebar to open after OPEN_DELAY_MS. Mirrors the leave/close
+   * delay so the sidebar is as responsive to opening as it is to closing.
+   * Cancelled if the pointer leaves the edge strip first, or if it enters the
+   * panel directly.
+   */
+  function scheduleOpen() {
+    clearTimeout(openTimer);
+    openTimer = setTimeout(() => setOpen(true), OPEN_DELAY_MS);
+  }
+
+  function cancelOpen() {
+    clearTimeout(openTimer);
   }
 
   function setPinned(next, notify = true) {
@@ -645,9 +665,9 @@
 
     edgeTrigger.addEventListener("mouseenter", () => {
       ensureConnected();
-      setOpen(true);
+      scheduleOpen();
     });
-    edgeTrigger.addEventListener("mouseleave", scheduleClose);
+    edgeTrigger.addEventListener("mouseleave", cancelOpen);
 
     sidebar.addEventListener("mouseenter", () => clearTimeout(closeTimer));
     sidebar.addEventListener("mouseleave", scheduleClose);

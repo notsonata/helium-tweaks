@@ -48,9 +48,10 @@ script is statically declared in the manifest (no dynamic injection).
 
 ## Using it
 
-- **Open:** pointer to the right screen edge, or press the toolbar button, or
-  press the keyboard shortcut.
-- **Auto-hide:** 140 ms after the pointer leaves the panel (only when
+- **Open:** pointer to the right screen edge (opens after a short delay that
+  mirrors the close delay, so it feels as responsive to open as to close), or
+  press the toolbar button, or press the keyboard shortcut.
+- **Auto-hide:** ~140 ms after the pointer leaves the panel (only when
   unpinned).
 - **Pin:** click the pin button in the footer to keep the sidebar open
   permanently (persists across pages/restarts).

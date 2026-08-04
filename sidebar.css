@@ -53,11 +53,8 @@
   width: 0;
   height: 0;
   font-family:
-    -apple-system,
-    BlinkMacSystemFont,
-    "SF Pro Text",
-    "SF Pro Display",
     "Helvetica Neue",
+    Helvetica,
     Arial,
     sans-serif;
   font-size: var(--font-size);
@@ -450,11 +447,12 @@
 
 /* Same footer content and interaction as the earlier version, scaled to Helium density */
 .sidebar-footer {
+  position: relative;
   display: flex;
   min-height: 34px;
   flex: 0 0 auto;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 6px;
   padding: 5px 7px 6px;
   border-top: 1px solid #2d3132;
@@ -468,6 +466,15 @@
   min-width: 0;
   align-items: center;
   gap: 6px;
+}
+
+/* Pin button is centered in the footer; the Esc hint is parked at the right edge
+   so the two don't crowd each other. */
+.footer-shortcuts {
+  position: absolute;
+  right: 7px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .pin-button {
@@ -487,12 +494,6 @@
 .pin-button.active {
   color: #f0f1f1;
   background: #343839;
-}
-
-.footer-shortcuts {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .kbd {
