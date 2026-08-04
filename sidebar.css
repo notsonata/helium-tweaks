@@ -501,11 +501,11 @@
 }
 
 /* Optically center the asymmetric thumbtack glyph inside the button. The flag
-   carries most of the visual weight and sits in the upper half, while the thin
-   pin line extends to the bottom — so the perceived center sits above the
-   geometric one. Nudge the glyph down slightly to balance it visually. */
+   head carries most of the visual weight and sits in the upper portion of the
+   viewBox (centroid ~y8.8 of 24), so the perceived center is well above the
+   geometric one. Nudge the glyph down to balance it (measured offset). */
 .pin-button svg {
-  transform: translateY(0.5px);
+  transform: translateY(1.6px);
 }
 
 .pin-button:hover,

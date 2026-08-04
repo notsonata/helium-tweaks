@@ -50,6 +50,9 @@
   /** Whether the sidebar is currently shown. Tracked so Escape handling and
    *  focus-aware auto-hide only act when the sidebar is actually open. */
   let isOpen = false;
+  /** The page element that had focus just before the sidebar opened, so we can
+   *  restore focus to the page when the sidebar closes. */
+  let previousActiveElement = null;
 
   let closeTimer = null;
   let openTimer = null;
@@ -222,29 +225,69 @@
 
   // ----- open / close / pin (template behavior) --------------------------
   function setOpen(open) {
+    const wasOpen = isOpen;
     isOpen = open;
     const shell = ref("sidebarShell");
     if (open) {
       clearTimeout(closeTimer);
+      // Capture the page's currently-focused element so we can restore it when
+      // the sidebar closes. Do this only on the closed->open transition.
+      if (!wasOpen) {
+        const active = document.activeElement;
+        if (active && active !== document.body && !host.contains(active)) {
+          previousActiveElement = active;
+        } else {
+          previousActiveElement = null;
+        }
+      }
     } else {
       clearTimeout(openTimer);
     }
     shell.classList.toggle("open", open);
+
+    if (open) {
+      // Move focus into the sidebar so the page no longer receives keystrokes
+      // (Cmd+K, typing) while the sidebar is open.
+      focusSidebarSearch();
+    } else if (wasOpen) {
+      // Sidebar closed (unhover/Esc/unpin): return focus to the page.
+      restorePageFocus();
+    }
   }
 
-  /** True when keyboard focus is anywhere inside the sidebar's shadow DOM. */
-  function focusInsideSidebar() {
-    const sb = ref("sidebar");
-    const active = shadow.activeElement;
-    return Boolean(sb && active && sb.contains(active));
+  /** Focus the search input and select any existing text. */
+  function focusSidebarSearch() {
+    const input = ref("searchInput");
+    if (input) {
+      input.focus();
+      try {
+        input.select();
+      } catch {
+        /* non-fatal */
+      }
+    }
+  }
+
+  /** Return keyboard focus to the webpage element that had it before the
+   *  sidebar opened, falling back to the document body. */
+  function restorePageFocus() {
+    try {
+      if (previousActiveElement && document.contains(previousActiveElement)) {
+        previousActiveElement.focus({ preventScroll: true });
+      } else {
+        document.body.focus({ preventScroll: true });
+      }
+    } catch {
+      /* element may be gone */
+    }
+    previousActiveElement = null;
   }
 
   function scheduleClose() {
     clearTimeout(closeTimer);
-    // Don't auto-hide while pinned, or while the user is keyboard-focused
-    // inside the sidebar (e.g. typing in search). The sidebar only auto-closes
-    // on pointer leave; focus keeps it alive.
-    if (pinned || focusInsideSidebar()) return;
+    // Only the pin prevents auto-hide now. Unhover closes the sidebar even when
+    // its search field is focused — closing restores focus to the page.
+    if (pinned) return;
     closeTimer = setTimeout(() => setOpen(false), CLOSE_DELAY_MS);
   }
 
@@ -752,7 +795,7 @@
   const IS_MAC =
     typeof navigator !== "undefined" &&
     /mac/i.test(navigator.platform || navigator.userAgent || "");
-  const DEFAULT_SHORTCUT = IS_MAC ? "Command+Shift+K" : "Ctrl+Shift+K";
+  const DEFAULT_SHORTCUT = IS_MAC ? "Command+K" : "Ctrl+K";
   let currentShortcut = DEFAULT_SHORTCUT;
 
   function setShortcutBadge(rawLabel) {
@@ -797,10 +840,8 @@
   // ----- open + focus (action button / keyboard command) ------------------
   function openAndFocus() {
     ensureConnected();
+    // setOpen(true) captures page focus and focuses the search input.
     setOpen(true);
-    const input = ref("searchInput");
-    input.focus();
-    input.select();
   }
 
   // ----- event wiring -----------------------------------------------------
@@ -836,19 +877,30 @@
     });
 
     // Escape behavior (template): first Esc clears search if present, else
-    // closes the sidebar (when unpinned) and blurs the field. Only act when the
-    // sidebar is actually open, so we never swallow Escape on pages where the
-    // sidebar is hidden.
+    // closes the sidebar (when unpinned). Only act when the sidebar is actually
+    // open, so we never swallow Escape on pages where the sidebar is hidden.
     document.addEventListener("keydown", (e) => {
-      if (e.key !== "Escape" || !isOpen) return;
-      if (searchQuery) {
+      if (!isOpen) return;
+
+      // While the sidebar is open, Cmd/Ctrl+K refocuses search (and selects
+      // text) instead of going to the page. We can't stop the browser's own
+      // address-bar Cmd+K, but we can keep focus inside the sidebar.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
         e.stopPropagation();
-        input.value = "";
-        applySearch("");
+        focusSidebarSearch();
         return;
       }
-      if (!pinned) setOpen(false);
-      input.blur();
+
+      if (e.key === "Escape") {
+        if (searchQuery) {
+          e.stopPropagation();
+          input.value = "";
+          applySearch("");
+          return;
+        }
+        if (!pinned) setOpen(false);
+      }
     });
 
     // Recompute overflow fades on viewport resize.

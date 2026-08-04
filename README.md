@@ -77,17 +77,21 @@ element's `shadowRoot` (which is `null` in closed mode).
 
 ## Keyboard shortcut
 
-- **Default:** `Command+Shift+K` (macOS) / `Ctrl+Shift+K` (Windows/Linux).
+- **Default:** `Command+K` (macOS) / `Ctrl+K` (Windows/Linux).
 - Opens the sidebar and focuses the search field.
+- While the sidebar is open, `Command+K` / `Ctrl+K` refocuses search (it's
+  captured by the sidebar so it doesn't reach the page).
 - **Change it:** open `helium://extensions/shortcuts` (or
   `chrome://extensions/shortcuts`) → find "Helium Bookmarks Sidebar" → edit the
   "Open the bookmarks sidebar and focus search" binding.
 - The actual configured shortcut is read at runtime and shown in the search
-  field's badge, so the badge always reflects your real binding.
+  field's badge, so the badge always reflects your real binding (it falls back
+  to the `Command+K` / `Ctrl+K` default if the binding is cleared or conflicts).
 
-`Command+K` / `Ctrl+K` is deliberately **not** used, because Helium (like
-Chrome) reserves it for the address bar and the extension can't reliably
-override it. `Shift+K` avoids that conflict.
+> **Note:** some browsers reserve `Command+K` / `Ctrl+K` for the address bar.
+> The extension command takes precedence when available, but if your browser
+> intercepts it first, reassign the shortcut at the URL above — the badge will
+> update to show whatever you set.
 
 ---
 
@@ -208,4 +212,4 @@ python3 tools/make-icons.py   # overwrites icons/icon-{16,32,48,128}.png
   and confirm you have bookmarks in the bar / other bookmarks. Newly added
   bookmarks appear live without a page refresh.
 - **Shortcut doesn't work:** another extension or the browser may have claimed
-  `Ctrl/⌘+Shift+K`. Reassign it at `helium://extensions/shortcuts`.
+  `Ctrl/⌘+K`. Reassign it at `helium://extensions/shortcuts`.
