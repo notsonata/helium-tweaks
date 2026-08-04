@@ -89,7 +89,8 @@ function sendToPort(port, message) {
 function broadcast(message) {
   for (const [tabId, port] of ports) {
     if (!sendToPort(port, message)) {
-      ports.delete(tabId);
+      // Stale port: only delete if it hasn't already been replaced.
+      if (ports.get(tabId) === port) ports.delete(tabId);
     }
   }
 }
@@ -127,7 +128,11 @@ async function initPort(port) {
   }
 
   ports.set(tabId, port);
-  port.onDisconnect.addListener(() => ports.delete(tabId));
+  // Identity check: if a replacement port connected before this disconnect
+  // fired, leave the newer port in place.
+  port.onDisconnect.addListener(() => {
+    if (ports.get(tabId) === port) ports.delete(tabId);
+  });
 
   // Push the current data immediately so the sidebar doesn't start empty.
   try {
@@ -173,17 +178,25 @@ if (chrome.bookmarks.onImportEnded && chrome.bookmarks.onImportEnded.addListener
 
 /* ---------- action / command bridge ------------------------------------- */
 
-async function openSidebarInActiveTab() {
+// Uses the tab supplied by chrome.action.onClicked, which is unambiguous across
+// windows (re-querying {active, currentWindow} can race in multi-window setups).
+async function openSidebarInTab(tab) {
   try {
-    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab || typeof tab.id !== "number") return;
     const port = ports.get(tab.id);
     if (port) {
-      sendToPort(port, { type: "openAndFocus" });
-    } else if (!tab.url || /^https?:/i.test(tab.url)) {
-      // No live port. The content script is not loaded on this page (e.g. a
-      // restricted page) OR the tab predates installation. Try a one-shot
-      // message; the content script may inject and respond on the next load.
+      const ok = sendToPort(port, { type: "openAndFocus" });
+      if (!ok) {
+        // Stale port still in the map: drop it and fall through to one-shot.
+        if (ports.get(tab.id) === port) ports.delete(tab.id);
+      } else {
+        return;
+      }
+    }
+    // No live port. The content script is not loaded on this page (e.g. a
+    // restricted page) OR the tab predates installation. Try a one-shot
+    // message; the content script may inject and respond on the next load.
+    if (!tab.url || /^https?:/i.test(tab.url) || /^file:/i.test(tab.url)) {
       try {
         await chrome.tabs.sendMessage(tab.id, { type: "openAndFocus" });
       } catch {
@@ -191,9 +204,10 @@ async function openSidebarInActiveTab() {
       }
     }
   } catch (err) {
-    console.error("[helium-bookmarks] openSidebarInActiveTab failed:", err);
+    console.error("[helium-bookmarks] openSidebarInTab failed:", err);
   }
 }
 
+chrome.action.onClicked.addListener(openSidebarInTab);
+
 // _execute_action routes BOTH the toolbar click and the keyboard shortcut here.
-chrome.action.onClicked.addListener(openSidebarInActiveTab);

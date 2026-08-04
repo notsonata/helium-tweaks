@@ -535,6 +535,26 @@
   transform: translateY(0);
 }
 
+/* Visible keyboard focus states for every interactive element, so keyboard
+   users always see where focus is. :focus-visible only matches keyboard/AT
+   focus, not mouse clicks, so it won't appear during normal pointer use. */
+:focus-visible {
+  outline: 2px solid #6d7374;
+  outline-offset: 1px;
+}
+
+/* Bookmark rows get an inset ring so the outline aligns with the rounded row. */
+.bookmark:focus-visible {
+  outline-offset: -1px;
+}
+
+/* The search field keeps its own subtle focus treatment from .search:focus,
+   but ensure a visible outline remains for keyboard users. */
+.search:focus-visible {
+  outline: 2px solid #6d7374;
+  outline-offset: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   :host *,
   :host *::before,

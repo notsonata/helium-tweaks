@@ -47,6 +47,9 @@
   let pinned = false;
   /** Current search query (not persisted). */
   let searchQuery = "";
+  /** Whether the sidebar is currently shown. Tracked so Escape handling and
+   *  focus-aware auto-hide only act when the sidebar is actually open. */
+  let isOpen = false;
 
   let closeTimer = null;
   let openTimer = null;
@@ -55,14 +58,22 @@
   let portDead = false;
   /** Avoids reconnect storms on edge-hover while a connect is in flight. */
   let reconnecting = false;
+  /** Auto-reconnect state for when the MV3 service worker goes idle and the
+   *  port drops (e.g. a pinned sidebar left open). Capped exponential backoff. */
+  let reconnectAttempt = 0;
+  let reconnectTimer = null;
 
   // ----- DOM scaffold -----------------------------------------------------
   const host = document.createElement("div");
-  host.id = "helium-bookmarks-sidebar-root";
+  // No predictable id/attribute: a closed shadow root already hides our DOM
+  // from page scripts, and an unmarked host avoids giving pages a handle to
+  // probe for the extension's presence.
   // The host must not affect page layout or intercept page pointer events.
   host.style.cssText =
     "all: initial; margin: 0 !important; padding: 0 !important; border: 0 !important; background: transparent !important; width: 0 !important; height: 0 !important; top: 0 !important; left: 0 !important; position: static !important;";
-  const shadow = host.attachShadow({ mode: "open" });
+  // Closed mode: page scripts cannot reach host.shadowRoot, so bookmark titles
+  // and URLs rendered inside the sidebar stay private from the page.
+  const shadow = host.attachShadow({ mode: "closed" });
 
   // Build the sidebar markup inside the shadow root. This mirrors the template
   // HTML exactly, minus the demo page content and the removed row-menu button.
@@ -208,6 +219,7 @@
 
   // ----- open / close / pin (template behavior) --------------------------
   function setOpen(open) {
+    isOpen = open;
     const shell = ref("sidebarShell");
     if (open) {
       clearTimeout(closeTimer);
@@ -217,9 +229,19 @@
     shell.classList.toggle("open", open);
   }
 
+  /** True when keyboard focus is anywhere inside the sidebar's shadow DOM. */
+  function focusInsideSidebar() {
+    const sb = ref("sidebar");
+    const active = shadow.activeElement;
+    return Boolean(sb && active && sb.contains(active));
+  }
+
   function scheduleClose() {
     clearTimeout(closeTimer);
-    if (pinned) return;
+    // Don't auto-hide while pinned, or while the user is keyboard-focused
+    // inside the sidebar (e.g. typing in search). The sidebar only auto-closes
+    // on pointer leave; focus keeps it alive.
+    if (pinned || focusInsideSidebar()) return;
     closeTimer = setTimeout(() => setOpen(false), CLOSE_DELAY_MS);
   }
 
@@ -327,8 +349,11 @@
     if (typeof url !== "string") return null;
     const trimmed = url.trim();
     if (!trimmed) return null;
-    // Allow only http(s) and a few benign schemes; drop javascript:/data: etc.
-    if (/^(https?|ftp|file):/i.test(trimmed)) return trimmed;
+    // Allow navigational/document schemes the browser handles natively; drop
+    // script-capable schemes (javascript:, data:) and anything else risky.
+    // http(s) and mailto/tel work reliably from any page; file:/ftp are
+    // intentionally excluded as they don't behave reliably from an http page.
+    if (/^(https?|mailto|tel):/i.test(trimmed)) return trimmed;
     return null;
   }
 
@@ -358,46 +383,73 @@
 
   /**
    * Build a display tree from a bookmark node:
-   *   folder -> { type:"folder", node, children: [bookmark|folder...] }
-   *   bookmark -> { type:"bookmark", node }
+   *   bookmark -> { type:"bookmark", node, bookmarkCount: 1 | 0 }
+   *   folder   -> { type:"folder", node, depth, children: [...], showAll,
+   *                 directCount, descendantCount }
    *
-   * In search mode a folder is kept only if it (or any descendant) matches;
-   * its children list contains only matching entries. In non-search mode the
-   * full structure is preserved.
+   * Search semantics (when q is non-empty):
+   *   - A bookmark matches if its title or URL matches q.
+   *   - A folder "matches itself" if its title or its ancestor path matches q.
+   *     When a folder matches itself we show ALL of its bookmarks (regardless
+   *     of whether each individually matches) — this is the "folder path
+   *     search" behavior, and we mark it with showAll: true.
+   *   - A folder is kept if it matches itself OR any descendant matches.
+   *     Ancestor folders are kept to preserve context, even with no direct
+   *     match (so nested matches survive).
+   *   - descendantCount bubbles up recursively so the keep/drop decision uses
+   *     the total number of matching bookmarks beneath the folder, not just
+   *     direct children.
+   * In non-search mode the full structure is preserved and showAll is false.
    */
-  function buildDisplayNode(node, depth, q, folderPathMap) {
+  function buildDisplayNode(node, depth, q, folderPathMap, showAllChildren) {
+    // showAllChildren: when true (an ancestor matched by name/path), every
+    // bookmark beneath us is shown regardless of its own match.
     if (node.url) {
-      if (!q) return { type: "bookmark", node };
+      const show = !q || showAllChildren;
+      if (show) return { type: "bookmark", node, bookmarkCount: 1 };
       const title = node.title || "";
       const url = node.url || "";
-      if (
-        matchesQuery(title, q) ||
-        matchesQuery(url, q)
-      ) {
-        return { type: "bookmark", node };
+      if (matchesQuery(title, q) || matchesQuery(url, q)) {
+        return { type: "bookmark", node, bookmarkCount: 1 };
       }
-      return null;
+      return { type: "bookmark", node, bookmarkCount: 0, hidden: true };
     }
 
     // Folder.
+    let thisShowAll = false;
+    if (q) {
+      thisShowAll =
+        showAllChildren ||
+        matchesQuery(displayTitle(node), q) ||
+        matchesQuery(folderPathMap[node.id] || "", q);
+    } else if (showAllChildren) {
+      thisShowAll = true;
+    }
+
     const childDisplay = [];
-    let childMatchCount = 0;
+    let directCount = 0; // visible bookmarks that are direct children
+    let descendantCount = 0; // visible bookmarks anywhere beneath this folder
     if (Array.isArray(node.children)) {
       for (const child of node.children) {
-        const dn = buildDisplayNode(child, depth + 1, q, folderPathMap);
+        const dn = buildDisplayNode(child, depth + 1, q, folderPathMap, thisShowAll);
         if (!dn) continue;
-        if (dn.type === "bookmark") childMatchCount++;
-        childDisplay.push(dn);
+        if (dn.type === "bookmark") {
+          if (!dn.hidden) {
+            directCount++;
+            descendantCount++;
+            childDisplay.push(dn);
+          }
+          // hidden bookmarks are dropped from rendering entirely
+        } else {
+          childDisplay.push(dn);
+          descendantCount += dn.descendantCount;
+        }
       }
     }
 
     if (q) {
-      // A folder is shown only if it has matching descendant bookmarks OR its
-      // own title/path matches the query. Otherwise drop it entirely.
-      const folderMatchesItself =
-        matchesQuery(displayTitle(node), q) ||
-        matchesQuery(folderPathMap[node.id] || "", q);
-      if (childMatchCount === 0 && !folderMatchesItself) {
+      // Keep this folder only if it matches itself OR any descendant matches.
+      if (!thisShowAll && descendantCount === 0) {
         return null;
       }
     }
@@ -406,8 +458,10 @@
       type: "folder",
       node,
       depth,
-      childMatchCount,
       children: childDisplay,
+      showAll: thisShowAll,
+      directCount,
+      descendantCount,
     };
   }
 
@@ -452,6 +506,7 @@
    */
   function renderNode(dn, q) {
     if (dn.type === "bookmark") {
+      if (dn.hidden) return null;
       return { element: renderBookmark(dn.node), bookmarkCount: 1 };
     }
 
@@ -481,7 +536,9 @@
 
     const count = document.createElement("span");
     count.className = "folder-count";
-    count.textContent = String(dn.childMatchCount);
+    // Count all visible bookmarks beneath this folder (direct + nested), so a
+    // folder that only contains subfolders doesn't misleadingly show "0".
+    count.textContent = String(dn.descendantCount);
     header.appendChild(count);
 
     header.addEventListener("click", () => {
@@ -548,9 +605,10 @@
       // Malformed/unsupported URL: render non-navigable, dimmed.
       row.removeAttribute("href");
       row.style.opacity = "0.55";
-      row.title = "Unsupported bookmark URL";
     }
-    row.title = bm.title || url || "";
+    // Tooltip: prefer the bookmark title; surface the unsupported-URL note only
+    // when there is no usable title (avoids clobbering the note below).
+    row.title = bm.title || (url ? url : "Unsupported bookmark URL");
 
     const icon = document.createElement("span");
     icon.className = "favicon";
@@ -602,6 +660,9 @@
   // ----- messaging --------------------------------------------------------
   function handleMessage(msg) {
     if (!msg || typeof msg !== "object") return;
+    // A successful message proves the connection is healthy — reset the
+    // reconnect backoff so the next drop starts at the short delay again.
+    reconnectAttempt = 0;
     if (msg.type === "bookmarks" && Array.isArray(msg.tree)) {
       bookmarkTree = msg.tree;
       render();
@@ -616,24 +677,51 @@
     try {
       port = chrome.runtime.connect({ name: PORT_NAME });
       portDead = false;
+      // A successful message resets the backoff: the connection is healthy.
       port.onMessage.addListener(handleMessage);
       port.onDisconnect.addListener(() => {
         port = null;
-        // Context invalidated (extension reloaded) or tab going away. We'll
-        // lazily reconnect on the next edge-hover. Don't spam reconnects.
         portDead = true;
+        // Context invalidated (extension reloaded), tab navigating, or the MV3
+        // service worker went idle and tore the port down. Schedule an
+        // automatic reconnect so a pinned sidebar keeps receiving live updates
+        // even when the user never re-triggers the edge-hover path.
+        scheduleReconnect();
       });
     } catch (err) {
-      // Runtime context may be gone; stay quiet.
+      // Runtime context may be gone; try again after backoff.
       port = null;
       portDead = true;
+      scheduleReconnect();
     }
   }
 
-  /** Reconnect on demand (e.g. after the extension was reloaded). */
+  /**
+   * Capped exponential backoff reconnect: 250ms, 500ms, 1s, 2s, 4s, then 5s.
+   * Avoids hammering the API when the extension context is truly gone (e.g.
+   * being uninstalled), while recovering quickly from a transient SW idle.
+   */
+  function scheduleReconnect() {
+    clearTimeout(reconnectTimer);
+    if (port && !portDead) return; // already reconnected by another path
+    const delay = Math.min(250 * 2 ** reconnectAttempt, 5000);
+    reconnectAttempt += 1;
+    reconnectTimer = setTimeout(() => {
+      // If the extension was uninstalled/reloaded, connect() throws.
+      try {
+        connectPort();
+      } catch {
+        scheduleReconnect();
+      }
+    }, delay);
+  }
+
+  /** Reconnect on demand (e.g. user edge-hovers while the port is down). */
   function ensureConnected() {
     if (port && !portDead) return;
     if (reconnecting) return;
+    // Cancel any pending backoff and reconnect immediately on user action.
+    clearTimeout(reconnectTimer);
     reconnecting = true;
     try {
       connectPort();
@@ -728,18 +816,19 @@
     });
 
     // Escape behavior (template): first Esc clears search if present, else
-    // closes the sidebar (when unpinned) and blurs the field.
+    // closes the sidebar (when unpinned) and blurs the field. Only act when the
+    // sidebar is actually open, so we never swallow Escape on pages where the
+    // sidebar is hidden.
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        if (searchQuery) {
-          e.stopPropagation();
-          input.value = "";
-          applySearch("");
-          return;
-        }
-        if (!pinned) setOpen(false);
-        input.blur();
+      if (e.key !== "Escape" || !isOpen) return;
+      if (searchQuery) {
+        e.stopPropagation();
+        input.value = "";
+        applySearch("");
+        return;
       }
+      if (!pinned) setOpen(false);
+      input.blur();
     });
 
     // Recompute overflow fades on viewport resize.

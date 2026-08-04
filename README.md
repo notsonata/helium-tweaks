@@ -41,8 +41,16 @@ Only three permissions are requested, all required for core functionality:
 | `storage` | Persist per-folder collapsed state and the pinned/unpinned state across restarts. |
 | `favicon` | Use Chromium's built-in `_favicon` endpoint for bookmark icons instead of an external service. |
 
-No `host_permissions`, no `<all_urls>` host access, no remote code. The content
-script is statically declared in the manifest (no dynamic injection).
+The extension does not declare a separate `host_permissions` key, but its
+content script runs on **all HTTP and HTTPS pages** (`matches: ["http://*/*",
+"https://*/*"]`) because edge-hover activation must be available on those pages.
+Chrome may surface this as site-access information on the extension card. There
+is no `<all_urls>` host access and no remote code; the content script is
+statically declared in the manifest (no dynamic injection).
+
+The sidebar is rendered inside a **closed** Shadow DOM, so page JavaScript
+cannot read the bookmark titles/URLs shown in the sidebar via the host
+element's `shadowRoot` (which is `null` in closed mode).
 
 ---
 
@@ -149,7 +157,7 @@ helium-bookmarks-sidebar/
 ```
 
 **Data flow:** `chrome.bookmarks` → service worker → long-lived port → content
-script renders into a closed-off Shadow DOM. No polling. Bookmark change events
+script renders into a **closed** Shadow DOM. No polling. Bookmark change events
 (`onCreated`, `onRemoved`, `onChanged`, `onMoved`, `onChildrenReordered`,
 `onImportEnded`) are debounced (~90 ms) before re-fetching and re-rendering, so
 a large import won't flood the sidebar.
