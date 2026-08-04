@@ -163,17 +163,24 @@ available. No external favicon provider is used.
 
 ---
 
-## Regenerating the icons
+## Icons
 
-The icons are generated from the template palette with the Python standard
-library only (no Pillow/external dependencies):
+The extension toolbar icons (`icons/icon-{16,32,48,128}.png`) are the project's
+brand mark — a blue rounded square with a white `*t` glyph. The 16/32 px sizes
+are copied directly from `favicons/favicon-{16,32}x32.png`; the 48 px and 128 px
+sizes are downsampled from `favicons/android-chrome-{192,512}x{192,512}.png` at
+clean 4:1 ratios.
+
+The full brand favicon set (192/512 px, apple-touch-icon, `.ico`,
+`site.webmanifest`) is preserved under `favicons/`.
+
+A fallback generator is also included (`tools/make-icons.py`, Python stdlib
+only — no Pillow) that draws a simpler bookmark-ribbon glyph in the template
+palette. Only run it if you want to revert to the generated icons:
 
 ```sh
-python3 tools/make-icons.py
+python3 tools/make-icons.py   # overwrites icons/icon-{16,32,48,128}.png
 ```
-
-This overwrites `icons/icon-{16,32,48,128}.png`. Run it again if you want to
-tweak the glyph in `tools/make-icons.py`.
 
 ---
 
