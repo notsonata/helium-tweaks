@@ -51,6 +51,7 @@
     if (type !== "mouseenter" && type !== "mouseleave") return false;
     if (!(target instanceof Element)) return false;
     if (target.id !== "edgeTrigger" && target.id !== "sidebar") return false;
+    if (!isContentHoverListener(target.id, type, listener)) return false;
 
     const root = target.getRootNode();
     if (!(root instanceof ShadowRoot)) return false;
@@ -91,6 +92,31 @@
 
     maybeStartController();
     return true;
+  }
+
+  function isContentHoverListener(targetId, type, listener) {
+    if (typeof listener !== "function") return false;
+
+    let source = "";
+    try {
+      source = Function.prototype.toString.call(listener);
+    } catch {
+      return false;
+    }
+
+    if (targetId === "edgeTrigger" && type === "mouseenter") {
+      return source.includes("ensureConnected") && source.includes("scheduleOpen");
+    }
+    if (targetId === "edgeTrigger" && type === "mouseleave") {
+      return source.includes("cancelOpen") || source.includes("openTimer");
+    }
+    if (targetId === "sidebar" && type === "mouseenter") {
+      return source.includes("clearTimeout(closeTimer)");
+    }
+    if (targetId === "sidebar" && type === "mouseleave") {
+      return source.includes("scheduleClose") || source.includes("CLOSE_DELAY_MS");
+    }
+    return false;
   }
 
   function maybeStartController() {
