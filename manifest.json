@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Helium Bookmarks Sidebar",
+  "version": "1.0.0",
+  "description": "A right-edge bookmark sidebar overlay for the Helium browser. Edge-hover to open, pin to keep, real bookmarks, Chromium favicons.",
+  "permissions": ["bookmarks", "storage", "favicon"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Toggle bookmarks sidebar",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "commands": {
+    "_execute_action": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+K",
+        "mac": "Command+Shift+K"
+      },
+      "description": "Open the bookmarks sidebar and focus search"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["sidebar.css", "_favicon/*"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
+}

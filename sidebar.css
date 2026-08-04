@@ -1,0 +1,543 @@
+/*
+  Helium Bookmarks Sidebar — sidebar styles.
+
+  Copied from the "helium-bookmarks-sidebar-210-v10.html" template and adapted
+  for Shadow DOM: custom properties and color-scheme live on :host (the shadow
+  root's host element), and the demo-page rules, the per-row "more actions"
+  button, and its hover/selected title-fade variant have been removed.
+
+  No values below have been "improved". Dimensions, palette, radii, typography,
+  and timings match the template.
+*/
+
+:host {
+  color-scheme: dark;
+
+  /*
+    Visually matched to the Helium sidebar in the supplied side-by-side screenshot.
+    These values intentionally ignore the earlier requested pixel estimates.
+  */
+  --panel-width: 210px;
+  --panel-inset: 5px;
+  --inner-margin: 8px;
+  --inner-width: calc(var(--panel-width) - (var(--inner-margin) * 2) - 2px);
+
+  --search-height: 32px;
+  --row-height: 33px;
+  --folder-height: 28px;
+
+  --font-size: 13px;
+  --panel: #1d2021;
+  --panel-border: #3c4142;
+  --control-border: #505657;
+  --text: #d0d3d4;
+  --text-strong: #eceeee;
+  --muted: #8c9294;
+  --dim: #707678;
+  --hover: #303435;
+  --selected: #3a3e3f;
+  --footer: #1a1d1e;
+}
+
+:host *,
+:host *::before,
+:host *::after {
+  box-sizing: border-box;
+}
+
+:host {
+  /* The host element itself never participates in page layout. */
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 0;
+  height: 0;
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
+    "SF Pro Display",
+    "Helvetica Neue",
+    Arial,
+    sans-serif;
+  font-size: var(--font-size);
+  -webkit-font-smoothing: antialiased;
+}
+
+:host button,
+:host input {
+  font: inherit;
+}
+
+/* Invisible trigger strip pinned to the far-right edge of the viewport. */
+.edge-trigger {
+  position: fixed;
+  z-index: 2147483646;
+  top: 0;
+  right: 0;
+  width: 6px;
+  height: 100vh;
+}
+
+.sidebar-shell {
+  position: fixed;
+  z-index: 2147483647;
+  top: var(--panel-inset);
+  right: var(--panel-inset);
+  bottom: var(--panel-inset);
+  width: var(--panel-width);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(calc(100% + 14px));
+  transition:
+    transform 200ms cubic-bezier(.2,.82,.2,1),
+    opacity 135ms ease;
+}
+
+.sidebar-shell.open {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+}
+
+.sidebar {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--panel-border);
+  border-radius: 9px;
+  background: var(--panel);
+  box-shadow:
+    0 18px 54px rgba(0,0,0,.55),
+    0 0 0 1px rgba(0,0,0,.45);
+}
+
+/*
+  Search uses the same outer footprint as Helium's pinned Facebook tile.
+*/
+.search-wrap {
+  position: relative;
+  width: var(--inner-width);
+  height: var(--search-height);
+  flex: 0 0 auto;
+  margin: 7px var(--inner-margin) 6px;
+}
+
+.search-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: 14px;
+  height: 14px;
+  color: #8c9294;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
+.search {
+  width: 100%;
+  height: 100%;
+  padding: 0 52px 0 31px;
+  border: 1px solid var(--control-border);
+  border-radius: 9px;
+  outline: none;
+  color: var(--text-strong);
+  background: #1c1f20;
+  font-size: 13px;
+  font-weight: 450;
+  letter-spacing: -.006em;
+  transition:
+    border-color 100ms ease,
+    background 100ms ease,
+    box-shadow 100ms ease;
+}
+
+.search::placeholder {
+  color: #92989a;
+  opacity: 1;
+}
+
+.search:focus {
+  border-color: #6d7374;
+  background: #202324;
+  box-shadow: 0 0 0 2px rgba(255,255,255,.035);
+}
+
+.search-shortcut {
+  position: absolute;
+  top: 50%;
+  right: 7px;
+  display: inline-flex;
+  height: 20px;
+  align-items: center;
+  padding: 0 6px;
+  transform: translateY(-50%);
+  border: 1px solid #3b4041;
+  border-bottom-color: #4d5253;
+  border-radius: 5px;
+  color: #8f9597;
+  background: #232627;
+  font-size: 9px;
+  font-weight: 500;
+  line-height: 1;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.search-shortcut.hidden {
+  opacity: 0;
+}
+
+.clear-search {
+  position: absolute;
+  top: 50%;
+  right: 3px;
+  display: none;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 0;
+  border-radius: 7px;
+  color: #a3a8aa;
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.clear-search.visible {
+  display: grid;
+}
+
+.clear-search:hover {
+  color: #f0f1f1;
+  background: #343839;
+}
+
+.scroll {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0 var(--inner-margin) 9px;
+  scrollbar-color: #4d5253 transparent;
+  scrollbar-width: thin;
+}
+
+.scroll::-webkit-scrollbar {
+  width: 5px;
+}
+
+.scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.scroll::-webkit-scrollbar-thumb {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: #4d5253;
+  background-clip: padding-box;
+}
+
+.folder {
+  width: var(--inner-width);
+  margin: 0 0 6px;
+}
+
+/*
+  Nested folders (any depth) are rendered inside their parent's folder-inner so
+  that collapsing the parent hides them too. width:calc(100% - 11px) is relative
+  to the containing folder-inner, so the indent shrinks automatically at every
+  depth without overflowing. No connector lines or tree graphics.
+*/
+.folder.nested {
+  width: calc(100% - 11px);
+  margin: 0 0 6px 11px;
+}
+
+.folder.nested .folder-header,
+.folder.nested .bookmark {
+  width: 100%;
+}
+
+.folder-header {
+  position: sticky;
+  z-index: 2;
+  top: 0;
+  display: flex;
+  width: var(--inner-width);
+  height: var(--folder-height);
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 7px;
+  color: #c3c7c8;
+  background: rgba(29,32,33,.97);
+  cursor: pointer;
+  text-align: left;
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+}
+
+.folder-header:hover {
+  color: var(--text-strong);
+  background: #282b2c;
+}
+
+.chevron {
+  width: 11px;
+  height: 11px;
+  flex: 0 0 auto;
+  color: #878d8f;
+  transform: rotate(90deg);
+  transition: transform 145ms cubic-bezier(.2,.8,.2,1);
+}
+
+.folder.collapsed .chevron {
+  transform: rotate(0deg);
+}
+
+.folder-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 540;
+  letter-spacing: -.008em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folder-count {
+  min-width: 22px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid #363b3c;
+  border-radius: 999px;
+  color: #7f8587;
+  background: #222526;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
+  text-align: center;
+}
+
+.folder-content {
+  display: grid;
+  grid-template-rows: 1fr;
+  opacity: 1;
+  transition:
+    grid-template-rows 175ms cubic-bezier(.2,.8,.2,1),
+    opacity 120ms ease;
+}
+
+.folder.collapsed .folder-content {
+  grid-template-rows: 0fr;
+  opacity: 0;
+}
+
+.folder-inner {
+  min-height: 0;
+  overflow: hidden;
+}
+
+.bookmark {
+  position: relative;
+  display: flex;
+  width: var(--inner-width);
+  height: var(--row-height);
+  align-items: center;
+  gap: 8px;
+  margin: 1px 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  color: #d0d3d4;
+  background: transparent;
+  cursor: default;
+  text-decoration: none;
+  transition:
+    background 90ms ease,
+    color 90ms ease,
+    transform 90ms ease;
+}
+
+.bookmark:hover {
+  color: var(--text-strong);
+  background: var(--hover);
+}
+
+.bookmark.selected {
+  color: var(--text-strong);
+  background: var(--selected);
+}
+
+.bookmark:active {
+  transform: scale(.994);
+}
+
+.favicon {
+  display: grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 5px;
+  color: white;
+  background: #343839;
+  font-size: 8px;
+  font-weight: 720;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.07);
+}
+
+.favicon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.bookmark-title {
+  display: block;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  padding-right: 1px;
+  font-size: 13px;
+  font-weight: 450;
+  letter-spacing: -.008em;
+  text-overflow: clip;
+  white-space: nowrap;
+}
+
+/* Applied only when the label actually exceeds its available width. */
+.bookmark-title.overflowing {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 calc(100% - 28px),
+    rgba(0,0,0,.92) calc(100% - 22px),
+    rgba(0,0,0,.66) calc(100% - 14px),
+    rgba(0,0,0,.25) calc(100% - 6px),
+    transparent 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 calc(100% - 28px),
+    rgba(0,0,0,.92) calc(100% - 22px),
+    rgba(0,0,0,.66) calc(100% - 14px),
+    rgba(0,0,0,.25) calc(100% - 6px),
+    transparent 100%
+  );
+}
+
+.empty {
+  display: none;
+  padding: 42px 16px;
+  color: #858b8d;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
+.empty.visible {
+  display: block;
+}
+
+/* Same footer content and interaction as the earlier version, scaled to Helium density */
+.sidebar-footer {
+  display: flex;
+  min-height: 34px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 5px 7px 6px;
+  border-top: 1px solid #2d3132;
+  color: #72787a;
+  background: var(--footer);
+  font-size: 9px;
+}
+
+.footer-left {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.pin-button {
+  display: grid;
+  width: 23px;
+  height: 23px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #383d3e;
+  border-radius: 6px;
+  color: #8c9294;
+  background: #222526;
+  cursor: pointer;
+}
+
+.pin-button:hover,
+.pin-button.active {
+  color: #f0f1f1;
+  background: #343839;
+}
+
+.footer-shortcuts {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kbd {
+  display: inline-flex;
+  height: 16px;
+  align-items: center;
+  padding: 0 4px;
+  border: 1px solid #3b4041;
+  border-bottom-color: #4d5253;
+  border-radius: 4px;
+  color: #93999b;
+  background: #232627;
+  font-size: 8px;
+}
+
+.toast {
+  position: fixed;
+  z-index: 2147483647;
+  right: 18px;
+  bottom: 18px;
+  max-width: 240px;
+  padding: 8px 10px;
+  border: 1px solid #414647;
+  border-radius: 8px;
+  opacity: 0;
+  color: #d9dcdd;
+  background: #242829;
+  box-shadow: 0 12px 34px rgba(0,0,0,.45);
+  font-size: 11px;
+  pointer-events: none;
+  transform: translateY(7px);
+  transition:
+    opacity 125ms ease,
+    transform 150ms ease;
+}
+
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :host *,
+  :host *::before,
+  :host *::after {
+    transition-duration: .01ms !important;
+  }
+}
