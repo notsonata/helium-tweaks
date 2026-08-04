@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
   "name": "Helium Bookmarks Sidebar",
-  "version": "1.1.0",
-  "description": "A right-edge bookmark sidebar overlay for the Helium browser. Edge-hover to open, pin to keep, and edit real Chromium bookmarks.",
+  "version": "1.2.0",
+  "description": "A right-edge bookmark sidebar overlay for Helium with editing, drag-and-drop organization, and real Chromium bookmarks.",
   "permissions": ["bookmarks", "storage", "favicon"],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "service-worker.js"
   },
   "action": {
     "default_title": "Toggle bookmarks sidebar",
@@ -32,6 +32,7 @@
         "sidebar-fixes.js",
         "hover-controller.js",
         "bookmark-editor.js",
+        "bookmark-dnd.js",
         "content.js"
       ],
       "run_at": "document_start",
