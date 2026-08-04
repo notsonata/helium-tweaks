@@ -22,7 +22,7 @@ The extension requests:
 
 | Permission | Purpose |
 |---|---|
-| `bookmarks` | Read the bookmark tree and subscribe to bookmark changes. |
+| `bookmarks` | Read, create, move, and delete browser bookmarks and folders. |
 | `storage` | Persist collapsed folders and pinned state. |
 | `favicon` | Use Chromium's private `_favicon` endpoint. |
 
@@ -40,7 +40,24 @@ The bookmark UI is rendered in a **closed Shadow DOM**. Page JavaScript receives
 - **Folders:** every bookmark folder is an independent top-level collapsible section. Collapse state is remembered by stable bookmark folder ID and synchronized across open webpages.
 - **Search:** matches bookmark titles, URLs, folder titles, and folder paths. Search temporarily ignores stored collapse state.
 - **Escape:** clears an active query first, then closes an unpinned sidebar.
-- **Links:** normal click, Command/Ctrl-click, middle-click, and Shift-click retain native browser behavior.
+- **Links:** normal click, Command/Ctrl-click, middle-click, and Shift-click retain native browser behavior outside edit mode.
+
+## Edit mode
+
+Select **Edit** in the footer to manage bookmarks directly from the sidebar. The button changes to **Done** while editing, and New Folder and Delete controls appear beside it.
+
+- Folder and bookmark rows receive checkboxes.
+- Folders and bookmarks cannot be selected at the same time.
+- Selecting any item disables New Folder until the selection is cleared.
+- Delete remains disabled until at least one item is selected.
+- The browser-owned Bookmarks bar, Other bookmarks, and Mobile bookmarks roots cannot be deleted.
+- New folders are created inside Other bookmarks and appear as top-level sidebar sections.
+- Deleting bookmark sites always requires confirmation.
+- Deleting folders requires choosing between:
+  - **Delete folder only:** move its direct bookmarks and subfolders to Other bookmarks, then remove the empty folder.
+  - **Delete everything:** remove the selected folders and every item contained inside them.
+
+Folder and bookmark selection is temporary and is cleared when edit mode ends. Bookmark changes are pushed to every connected webpage after the browser confirms the mutation.
 
 ## Keyboard shortcut
 
@@ -98,7 +115,7 @@ Stored in `chrome.storage.local`:
 
 Every open page listens to `chrome.storage.onChanged`, so a folder collapsed on one webpage is reflected on the others. Startup does not prune stored folder IDs until the first real bookmark tree has arrived. Only state for folders confirmed to be deleted is removed.
 
-Search text, hover state, and selected bookmark rows are not persisted.
+Search text, edit-mode selection, hover state, and selected bookmark rows are not persisted.
 
 ## Architecture
 
@@ -106,6 +123,7 @@ Search text, hover state, and selected bookmark rows are not persisted.
 helium-tweaks/
 ├── manifest.json
 ├── background.js
+├── bookmark-editor.js
 ├── hover-controller.js
 ├── sidebar-fixes.js
 ├── content.js
@@ -120,7 +138,7 @@ helium-tweaks/
     └── icon-128.png
 ```
 
-`background.js` owns bookmark access, listens to bookmark events, reports the configured shortcut, and routes toolbar/command activation to tabs. `content.js` owns rendering and interaction inside the closed Shadow DOM. `hover-controller.js` provides a transform-independent hover state machine. `sidebar-fixes.js` contains narrowly scoped compatibility corrections for startup persistence, keyboard isolation, pin alignment, and flat folder presentation.
+`background.js` owns bookmark access, validates bookmark mutations, listens to bookmark events, reports the configured shortcut, and routes toolbar/command activation to tabs. `content.js` owns rendering and interaction inside the closed Shadow DOM. `bookmark-editor.js` adds the editing controls and sends mutation requests to the service worker. `hover-controller.js` provides a transform-independent hover state machine. `sidebar-fixes.js` contains narrowly scoped compatibility corrections for startup persistence, keyboard isolation, pin alignment, and flat folder presentation.
 
 No polling, remote scripts, framework, build step, or third-party runtime dependency is used.
 
