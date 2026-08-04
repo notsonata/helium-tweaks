@@ -28,8 +28,8 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle",
+      "js": ["sidebar-fixes.js", "content.js"],
+      "run_at": "document_start",
       "all_frames": false
     }
   ],
