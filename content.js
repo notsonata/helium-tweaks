@@ -65,6 +65,10 @@
    *  port drops (e.g. a pinned sidebar left open). Capped exponential backoff. */
   let reconnectAttempt = 0;
   let reconnectTimer = null;
+  /** Once an unpacked extension is reloaded, old content scripts keep running
+   *  in existing tabs but their chrome.runtime context is permanently invalid.
+   *  Stop all retries and remove the stale UI when that happens. */
+  let contextStopped = false;
 
   // ----- DOM scaffold -----------------------------------------------------
   const host = document.createElement("div");
@@ -157,7 +161,20 @@
   // Load the stylesheet as text into the shadow root. This is more deterministic
   // than a <link> (no flash of unstyled content, no race with render()).
   function loadStyles() {
-    return fetch(chrome.runtime.getURL("sidebar.css"))
+    if (!extensionContextAvailable()) {
+      stopInvalidContext();
+      return Promise.resolve();
+    }
+
+    let stylesheetUrl;
+    try {
+      stylesheetUrl = chrome.runtime.getURL("sidebar.css");
+    } catch {
+      stopInvalidContext();
+      return Promise.resolve();
+    }
+
+    return fetch(stylesheetUrl)
       .then((r) => r.text())
       .then((css) => {
         const style = document.createElement("style");
@@ -199,6 +216,11 @@
   }
 
   function persistCollapsed() {
+    if (!extensionContextAvailable()) {
+      stopInvalidContext();
+      return;
+    }
+
     chrome.storage.local.set(
       { [STORAGE_COLLAPSED]: collapsed },
       () => {
@@ -213,6 +235,11 @@
   }
 
   function persistPinned() {
+    if (!extensionContextAvailable()) {
+      stopInvalidContext();
+      return;
+    }
+
     chrome.storage.local.set({ [STORAGE_PINNED]: pinned }, () => {
       if (chrome.runtime.lastError) {
         console.error(
@@ -224,33 +251,77 @@
   }
 
   // ----- open / close / pin (template behavior) --------------------------
+  function extensionContextAvailable() {
+    if (contextStopped) return false;
+    try {
+      return Boolean(chrome?.runtime?.id);
+    } catch {
+      return false;
+    }
+  }
+
+  function consumeRuntimeLastError() {
+    try {
+      void chrome.runtime.lastError;
+    } catch {
+      /* The extension context is already gone. */
+    }
+  }
+
+  function stopInvalidContext() {
+    if (contextStopped) return;
+    contextStopped = true;
+
+    clearTimeout(openTimer);
+    clearTimeout(closeTimer);
+    clearTimeout(toastTimer);
+    clearTimeout(reconnectTimer);
+
+    const currentPort = port;
+    port = null;
+    portDead = true;
+    reconnecting = false;
+
+    if (currentPort) {
+      try {
+        currentPort.disconnect();
+      } catch {
+        /* The context or port is already gone. */
+      }
+    }
+
+    try {
+      host.remove();
+    } catch {
+      /* The host may not have been attached yet. */
+    }
+  }
+
+  function capturePageFocus() {
+    const active = document.activeElement;
+    if (active && active !== document.body && !host.contains(active)) {
+      previousActiveElement = active;
+    } else {
+      previousActiveElement = null;
+    }
+  }
+
   function setOpen(open) {
     const wasOpen = isOpen;
     isOpen = open;
     const shell = ref("sidebarShell");
+
     if (open) {
       clearTimeout(closeTimer);
-      // Capture the page's currently-focused element so we can restore it when
-      // the sidebar closes. Do this only on the closed->open transition.
-      if (!wasOpen) {
-        const active = document.activeElement;
-        if (active && active !== document.body && !host.contains(active)) {
-          previousActiveElement = active;
-        } else {
-          previousActiveElement = null;
-        }
-      }
     } else {
       clearTimeout(openTimer);
     }
+
     shell.classList.toggle("open", open);
 
-    if (open) {
-      // Move focus into the sidebar so the page no longer receives keystrokes
-      // (Cmd+K, typing) while the sidebar is open.
-      focusSidebarSearch();
-    } else if (wasOpen) {
-      // Sidebar closed (unhover/Esc/unpin): return focus to the page.
+    // Passive edge-hover never moves keyboard focus. Restore focus only when
+    // something inside the sidebar actually owns it at close time.
+    if (!open && wasOpen && shadow.activeElement) {
       restorePageFocus();
     }
   }
@@ -274,7 +345,7 @@
     try {
       if (previousActiveElement && document.contains(previousActiveElement)) {
         previousActiveElement.focus({ preventScroll: true });
-      } else {
+      } else if (document.body) {
         document.body.focus({ preventScroll: true });
       }
     } catch {
@@ -340,55 +411,38 @@
 
   // ----- favicon ----------------------------------------------------------
   function faviconUrl(pageUrl) {
-    const u = chrome.runtime.getURL("/_favicon/");
-    return `${u}?pageUrl=${encodeURIComponent(pageUrl)}&size=32`;
-  }
+    if (!extensionContextAvailable()) {
+      stopInvalidContext();
+      return null;
+    }
 
-  /**
-   * Derive the site's own favicon.ico URL from a page URL.
-   * e.g. "https://github.com/foo/bar" -> "https://github.com/favicon.ico"
-   */
-  function siteFaviconUrl(pageUrl) {
     try {
-      const parsed = new URL(pageUrl);
-      return `${parsed.origin}/favicon.ico`;
+      const u = chrome.runtime.getURL("/_favicon/");
+      return `${u}?pageUrl=${encodeURIComponent(pageUrl)}&size=32`;
     } catch {
+      stopInvalidContext();
       return null;
     }
   }
 
   /**
-   * Try loading a favicon for a bookmark into the given icon element, using a
-   * fallback chain so we don't show an empty box:
-   *   1. Chromium's _favicon/ endpoint (cached, privacy-preserving, offline)
-   *   2. The site's own /favicon.ico (native cross-origin <img> load)
-   * If every source fails, the letter fallback already in the element stays.
+   * Load only Chromium's private, cached _favicon endpoint. If Chromium has no
+   * icon, keep the existing letter avatar. Do not contact bookmarked domains.
    */
-  function loadFavicon(icon, pageUrl, fallbackLetter) {
-    const sources = [faviconUrl(pageUrl)];
-    const siteIco = siteFaviconUrl(pageUrl);
-    if (siteIco && siteIco !== sources[0]) sources.push(siteIco);
+  function loadFavicon(icon, pageUrl) {
+    const src = faviconUrl(pageUrl);
+    if (!src) return;
 
-    let attempt = 0;
-    const tryNext = () => {
-      if (attempt >= sources.length) return; // keep letter fallback
-      const src = sources[attempt++];
-      const img = new Image();
-      img.alt = "";
-      img.referrerPolicy = "no-referrer";
-      img.addEventListener("load", () => {
-        // Only swap in if we actually got a real image (non-zero dimensions).
-        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-          icon.textContent = "";
-          icon.appendChild(img);
-        } else {
-          tryNext();
-        }
-      });
-      img.addEventListener("error", tryNext);
-      img.src = src;
-    };
-    tryNext();
+    const img = new Image();
+    img.alt = "";
+    img.referrerPolicy = "no-referrer";
+    img.addEventListener("load", () => {
+      if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+        icon.textContent = "";
+        icon.appendChild(img);
+      }
+    });
+    img.src = src;
   }
 
   function safeUrl(url) {
@@ -664,7 +718,7 @@
     icon.textContent = fallbackLetter;
 
     if (url) {
-      loadFavicon(icon, url, fallbackLetter);
+      loadFavicon(icon, url);
     }
 
     const label = document.createElement("span");
@@ -705,7 +759,7 @@
 
   // ----- messaging --------------------------------------------------------
   function handleMessage(msg) {
-    if (!msg || typeof msg !== "object") return;
+    if (contextStopped || !msg || typeof msg !== "object") return;
     // A successful message proves the connection is healthy — reset the
     // reconnect backoff so the next drop starts at the short delay again.
     reconnectAttempt = 0;
@@ -719,63 +773,83 @@
     }
   }
 
-  /** True while we are intentionally disconnecting the port (e.g. pagehide for
-   *  bfcache). Suppresses the reconnect-on-disconnect path so a self-initiated
-   *  teardown doesn't immediately schedule a new connection. */
-  let selfDisconnecting = false;
-
   function connectPort() {
+    if (!extensionContextAvailable()) {
+      stopInvalidContext();
+      return;
+    }
+
     try {
-      selfDisconnecting = false;
-      port = chrome.runtime.connect({ name: PORT_NAME });
+      const nextPort = chrome.runtime.connect({ name: PORT_NAME });
+      port = nextPort;
       portDead = false;
-      // A successful message resets the backoff: the connection is healthy.
-      port.onMessage.addListener(handleMessage);
-      port.onDisconnect.addListener(() => {
-        // Consume lastError so Chrome doesn't log "Unchecked runtime.lastError"
-        // when the port closed because the page entered back/forward cache, the
-        // SW went idle, or the extension was reloaded.
-        void chrome.runtime.lastError;
+
+      nextPort.onMessage.addListener(handleMessage);
+      nextPort.onDisconnect.addListener(() => {
+        consumeRuntimeLastError();
+
+        // A replacement connection may already be active. A stale disconnect
+        // must not clear or reconnect over that newer port.
+        if (port !== nextPort) return;
+
         port = null;
         portDead = true;
-        // Only auto-reconnect for drops we did not cause ourselves. A
-        // self-disconnect (pagehide) is followed by a pageshow reconnect instead.
-        if (!selfDisconnecting) scheduleReconnect();
+
+        if (!extensionContextAvailable()) {
+          stopInvalidContext();
+          return;
+        }
+
+        scheduleReconnect();
       });
-    } catch (err) {
-      // Runtime context may be gone; try again after backoff.
-      void chrome.runtime.lastError;
+    } catch {
+      consumeRuntimeLastError();
       port = null;
       portDead = true;
+
+      if (!extensionContextAvailable()) {
+        stopInvalidContext();
+        return;
+      }
+
       scheduleReconnect();
     }
   }
 
   /**
    * Capped exponential backoff reconnect: 250ms, 500ms, 1s, 2s, 4s, then 5s.
-   * Avoids hammering the API when the extension context is truly gone (e.g.
-   * being uninstalled), while recovering quickly from a transient SW idle.
+   * A permanently invalidated extension context is terminal and is never
+   * retried, which avoids repeated "Extension context invalidated" errors.
    */
   function scheduleReconnect() {
     clearTimeout(reconnectTimer);
-    if (port && !portDead) return; // already reconnected by another path
+
+    if (contextStopped || (port && !portDead)) return;
+    if (!extensionContextAvailable()) {
+      stopInvalidContext();
+      return;
+    }
+
     const delay = Math.min(250 * 2 ** reconnectAttempt, 5000);
     reconnectAttempt += 1;
+
     reconnectTimer = setTimeout(() => {
-      // If the extension was uninstalled/reloaded, connect() throws.
-      try {
-        connectPort();
-      } catch {
-        scheduleReconnect();
+      if (!extensionContextAvailable()) {
+        stopInvalidContext();
+        return;
       }
+      connectPort();
     }, delay);
   }
 
   /** Reconnect on demand (e.g. user edge-hovers while the port is down). */
   function ensureConnected() {
-    if (port && !portDead) return;
-    if (reconnecting) return;
-    // Cancel any pending backoff and reconnect immediately on user action.
+    if (contextStopped || (port && !portDead) || reconnecting) return;
+    if (!extensionContextAvailable()) {
+      stopInvalidContext();
+      return;
+    }
+
     clearTimeout(reconnectTimer);
     reconnecting = true;
     try {
@@ -786,22 +860,12 @@
   }
 
   // ----- keyboard shortcut badge -----------------------------------------
-  // The badge shows the keyboard shortcut that opens the sidebar + focuses
-  // search. We render a platform-appropriate default immediately (don't wait
-  // for the background), then update it with the real configured binding once
-  // the service worker reports it. If the user cleared/conflicted the binding,
-  // the background sends an empty label and we fall back to the default for
-  // display. Hidden while the user is typing (so it doesn't sit under clear).
-  const IS_MAC =
-    typeof navigator !== "undefined" &&
-    /mac/i.test(navigator.platform || navigator.userAgent || "");
-  const DEFAULT_SHORTCUT = IS_MAC ? "Command+K" : "Ctrl+K";
-  let currentShortcut = DEFAULT_SHORTCUT;
+  // The badge shows only the shortcut Chromium confirms is actually assigned.
+  // Empty means unassigned or conflicted, so the badge remains hidden.
+  let currentShortcut = "";
 
   function setShortcutBadge(rawLabel) {
-    // Empty/missing label from the background means "no real binding reported"
-    // — fall back to the manifest default so the badge still shows something.
-    currentShortcut = rawLabel && rawLabel.trim() ? rawLabel : DEFAULT_SHORTCUT;
+    currentShortcut = typeof rawLabel === "string" ? rawLabel.trim() : "";
     const badge = ref("searchShortcut");
     const formatted = formatShortcut(currentShortcut);
     badge.textContent = formatted;
@@ -840,8 +904,9 @@
   // ----- open + focus (action button / keyboard command) ------------------
   function openAndFocus() {
     ensureConnected();
-    // setOpen(true) captures page focus and focuses the search input.
+    capturePageFocus();
     setOpen(true);
+    focusSidebarSearch();
   }
 
   // ----- event wiring -----------------------------------------------------
@@ -928,16 +993,18 @@
   function teardownPort() {
     clearTimeout(reconnectTimer);
     reconnecting = false;
-    if (port) {
-      selfDisconnecting = true; // suppress reconnect from our own disconnect
+
+    const currentPort = port;
+    port = null;
+    portDead = true;
+
+    if (currentPort) {
       try {
-        port.disconnect();
+        currentPort.disconnect();
       } catch {
         /* already gone */
       }
-      void chrome.runtime.lastError;
-      port = null;
-      portDead = true;
+      consumeRuntimeLastError();
     }
   }
 
@@ -968,9 +1035,8 @@
     await loadState();
     // Reflect loaded pinned state in the button.
     setPinned(pinned, false);
-    // Render the shortcut badge immediately with the platform default, so it's
-    // visible before (or even if) the background reports the real binding.
-    setShortcutBadge(DEFAULT_SHORTCUT);
+    // Stay hidden until the service worker reports a real assigned shortcut.
+    setShortcutBadge("");
     connectPort();
     render();
     wireEvents();
@@ -1014,6 +1080,10 @@
   }
 
   start().catch((err) => {
+    if (!extensionContextAvailable()) {
+      stopInvalidContext();
+      return;
+    }
     console.error("[helium-bookmarks] failed to start:", err);
   });
 })();

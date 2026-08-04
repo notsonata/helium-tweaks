@@ -1,158 +1,109 @@
 # Helium Bookmarks Sidebar
 
-A right-edge bookmark sidebar overlay for the **Helium browser** (and other
-Chromium-based browsers). It slides in when your pointer reaches the right edge
-of a page, shows your real browser bookmarks as collapsible folders, and uses
-Chromium's built-in favicon service — no external requests.
+A right-edge bookmark sidebar overlay for the **Helium browser** and other Chromium-based browsers. It opens when the pointer reaches the right edge of a normal webpage, displays real browser bookmarks as collapsible folder sections, and can remain pinned.
 
-It is **not** built on Chromium's native Side Panel API. The sidebar is injected
-as a Shadow-DOM-isolated webpage overlay, so it works the same way on any
-ordinary web page.
+The extension does not use Chromium's native Side Panel API. It renders an overlay inside a closed Shadow DOM so webpage styles cannot affect it and page scripts cannot read the bookmark titles or URLs rendered inside it.
 
-> Visual design is matched 1:1 to the `helium-bookmarks-sidebar-210-v10.html`
-> prototype (210 px panel width, exact palette, typography, radii, and timings).
+The visual design follows the `helium-bookmarks-sidebar-210-v10.html` prototype, including the 210 px panel, compact rows, overflow fade, colors, typography, radii, and timing.
 
----
+## Load it unpacked
 
-## Load it (Helium / Chromium, unpacked)
+1. Open `helium://extensions` or `chrome://extensions`.
+2. Enable **Developer mode**.
+3. Select **Load unpacked**.
+4. Choose the repository folder containing `manifest.json`.
+5. Refresh tabs that were already open before the extension was loaded or reloaded.
 
-1. Open the extensions page:
-   - **Helium:** `helium://extensions`
-   - **Chrome/Chromium:** `chrome://extensions`
-2. Turn on **Developer mode** (top-right toggle).
-3. Click **Load unpacked**.
-4. Select the `helium-bookmarks-sidebar/` folder (the one containing
-   `manifest.json`).
-5. Open any normal `http(s)` webpage. Move your pointer to the **far-right edge
-   of the screen** — the sidebar slides in.
+Move the pointer to the far-right edge of a normal HTTP or HTTPS page. The toolbar action and configured keyboard shortcut open the sidebar and focus search directly.
 
-The toolbar action button (and the keyboard shortcut below) also open the
-sidebar and focus the search field.
+## Permissions and site access
 
----
+The extension requests:
 
-## Permissions
-
-Only three permissions are requested, all required for core functionality:
-
-| Permission | Why it's needed |
+| Permission | Purpose |
 |---|---|
-| `bookmarks` | Read your bookmark tree and subscribe to live changes so the sidebar stays in sync. |
-| `storage` | Persist per-folder collapsed state and the pinned/unpinned state across restarts. |
-| `favicon` | Use Chromium's built-in `_favicon` endpoint for bookmark icons instead of an external service. |
+| `bookmarks` | Read the bookmark tree and subscribe to bookmark changes. |
+| `storage` | Persist collapsed folders and pinned state. |
+| `favicon` | Use Chromium's private `_favicon` endpoint. |
 
-The extension does not declare a separate `host_permissions` key, but its
-content script runs on **all HTTP and HTTPS pages** (`matches: ["http://*/*",
-"https://*/*"]`) because edge-hover activation must be available on those pages.
-Chrome may surface this as site-access information on the extension card. There
-is no `<all_urls>` host access and no remote code; the content script is
-statically declared in the manifest (no dynamic injection).
+The extension does not declare a separate `host_permissions` key, but its content script runs on all HTTP and HTTPS pages because edge-hover activation must be available on those pages. Chromium may display this as site access.
 
-The sidebar is rendered inside a **closed** Shadow DOM, so page JavaScript
-cannot read the bookmark titles/URLs shown in the sidebar via the host
-element's `shadowRoot` (which is `null` in closed mode).
+The bookmark UI is rendered in a **closed Shadow DOM**. Page JavaScript receives `null` from the host element's `shadowRoot` and cannot traverse the rendered bookmark links.
 
----
+## Behavior
 
-## Using it
-
-- **Open:** pointer to the right screen edge (opens after a short delay that
-  mirrors the close delay, so it feels as responsive to open as to close), or
-  press the toolbar button, or press the keyboard shortcut.
-- **Auto-hide:** ~140 ms after the pointer leaves the panel (only when
-  unpinned).
-- **Pin:** click the pin button in the footer to keep the sidebar open
-  permanently (persists across pages/restarts).
-- **Collapse a folder:** click its header. Collapsed state is remembered per
-  folder.
-- **Search:** type in the search field. Matches bookmark **titles**, **URLs**,
-  **folder titles**, and **folder paths**. Stored collapsed states are ignored
-  during search and restored when cleared.
-- **`Esc`:** if search has text, the first `Esc` clears it; otherwise `Esc`
-  closes the sidebar (when unpinned).
-- **Bookmarks:** click to open in the current tab, **⌘/Ctrl-click** or
-  **middle-click** for a new tab — native link behavior is preserved.
-
----
+- **Hover open:** move the pointer to the far-right page edge. Passive hover does not move keyboard focus away from the webpage.
+- **Toolbar or shortcut open:** opens the panel and focuses/selects the search field.
+- **Auto-hide:** closes about 140 ms after the pointer leaves when unpinned.
+- **Pin:** the footer button keeps the sidebar open and persists across restarts.
+- **Folders:** every folder is a collapsible section. Nested folders are nested sections. Collapse state is remembered by bookmark folder ID.
+- **Search:** matches bookmark titles, URLs, folder titles, and folder paths. Search temporarily ignores stored collapse state.
+- **Escape:** clears an active query first, then closes an unpinned sidebar.
+- **Links:** normal click, Command/Ctrl-click, middle-click, and Shift-click retain native browser behavior.
 
 ## Keyboard shortcut
 
-- **Default:** `Command+K` (macOS) / `Ctrl+K` (Windows/Linux).
-- Opens the sidebar and focuses the search field.
-- While the sidebar is open, `Command+K` / `Ctrl+K` refocuses search (it's
-  captured by the sidebar so it doesn't reach the page).
-- **Change it:** open `helium://extensions/shortcuts` (or
-  `chrome://extensions/shortcuts`) → find "Helium Bookmarks Sidebar" → edit the
-  "Open the bookmarks sidebar and focus search" binding.
-- The actual configured shortcut is read at runtime and shown in the search
-  field's badge, so the badge always reflects your real binding (it falls back
-  to the `Command+K` / `Ctrl+K` default if the binding is cleared or conflicts).
+The suggested default is:
 
-> **Note:** some browsers reserve `Command+K` / `Ctrl+K` for the address bar.
-> The extension command takes precedence when available, but if your browser
-> intercepts it first, reassign the shortcut at the URL above — the badge will
-> update to show whatever you set.
+- macOS: `Command+K`
+- Windows/Linux: `Ctrl+K`
 
----
+Some Chromium builds reserve this binding for the address bar. Configure or inspect the actual assignment at `helium://extensions/shortcuts` or `chrome://extensions/shortcuts`.
 
-## Browser-page limitations (read this)
+The badge inside the search field shows only the shortcut Chromium reports as actually assigned. If the binding is cleared or rejected because of a conflict, the badge stays hidden rather than claiming that the shortcut works.
 
-The sidebar is injected only into **top-level `http://` and `https://` pages**.
-It will **not** appear on:
+## Favicons and privacy
 
-- `chrome://` and `chrome-extension://` pages
-- `helium://` internal pages
-- the Extensions manager (`helium://extensions`)
+Bookmarks use only Chromium's extension favicon endpoint:
+
+```text
+chrome-extension://<extension-id>/_favicon/?pageUrl=...&size=32
+```
+
+The extension does **not** request `/favicon.ico` from bookmarked websites and does not use a third-party favicon provider. If Chromium has no cached favicon for a bookmark, the existing letter avatar remains visible. This prevents rendering the sidebar from contacting every bookmarked domain.
+
+## Live updates and extension reloads
+
+Bookmark events are debounced and pushed from the Manifest V3 service worker to connected tabs over a long-lived port. The content script reconnects with capped exponential backoff when the service worker is temporarily suspended.
+
+Reloading an unpacked extension is different: content scripts already present in open tabs retain a permanently invalid runtime context. The stale script now treats that condition as terminal, cancels reconnect timers, removes its old sidebar host, and does not repeatedly call invalidated extension APIs. Refresh the page once to inject the newly loaded extension version.
+
+## Browser limitations
+
+The sidebar is injected only into top-level `http://` and `https://` pages. It does not appear on:
+
+- `helium://`, `chrome://`, or `chrome-extension://` pages
+- extension-management pages
 - the Chrome Web Store
-- the New Tab Page and other browser-controlled pages
-- **any iframe** (top-level frame only)
-- `file://` pages (by default — see below)
-- `view-source:`, `data:`, `blob:` pages
+- browser-controlled new-tab pages
+- iframes
+- `view-source:`, `data:`, and `blob:` pages
+- local `file://` pages unless the manifest is modified and file access is enabled
 
-This is a hard Chromium restriction: extensions cannot inject content scripts
-into browser-protected pages. The toolbar button and keyboard shortcut will do
-nothing on those pages.
-
-### Optional: enable `file://` pages
-
-By default the manifest matches only `http(s)`, so local files won't get the
-sidebar. To support them:
-
-1. In `manifest.json`, under `content_scripts[0].matches`, add:
-   ```json
-   "file:///*"
-   ```
-2. Reload the extension.
-3. On the extensions page (`helium://extensions`), open the extension's
-   **Details** and enable **"Allow access to file URLs"**.
-
----
+These restrictions are enforced by Chromium.
 
 ## Persistent state
 
-Stored in `chrome.storage.local`, namespaced:
+Stored in `chrome.storage.local`:
 
-| Key | Type | Meaning |
-|---|---|---|
-| `heliumBmSidebar:collapsed:v1` | `{ [folderId]: boolean }` | Collapsed state per bookmark folder, keyed by the folder's stable bookmark id. |
-| `heliumBmSidebar:pinned:v1` | `boolean` | Whether the sidebar is pinned open. Defaults to `false` on first run. |
+| Key | Meaning |
+|---|---|
+| `heliumBmSidebar:collapsed:v1` | Per-folder collapsed state keyed by bookmark folder ID. |
+| `heliumBmSidebar:pinned:v1` | Whether the sidebar is pinned. |
 
-Not persisted (intentionally): the search query, selected row, hover state.
-Deleted folders are pruned from the collapsed map on the next render.
-
----
+Search text, hover state, and selected bookmark rows are not persisted. State for deleted folders is pruned during a normal render.
 
 ## Architecture
 
-```
-helium-bookmarks-sidebar/
-├── manifest.json       MV3 manifest (permissions, content script, action, command)
-├── background.js       Service worker: bookmark data + live events + port bridge
-├── content.js          Injected overlay: Shadow DOM sidebar + interaction
-├── sidebar.css         Template styles, scoped to :host (Shadow DOM)
-├── README.md           This file
+```text
+helium-tweaks/
+├── manifest.json
+├── background.js
+├── content.js
+├── sidebar.css
+├── README.md
 ├── tools/
-│   └── make-icons.py   stdlib-only PNG generator (zlib+struct), run once
+│   └── make-icons.py
 └── icons/
     ├── icon-16.png
     ├── icon-32.png
@@ -160,56 +111,11 @@ helium-bookmarks-sidebar/
     └── icon-128.png
 ```
 
-**Data flow:** `chrome.bookmarks` → service worker → long-lived port → content
-script renders into a **closed** Shadow DOM. No polling. Bookmark change events
-(`onCreated`, `onRemoved`, `onChanged`, `onMoved`, `onChildrenReordered`,
-`onImportEnded`) are debounced (~90 ms) before re-fetching and re-rendering, so
-a large import won't flood the sidebar.
-
-**Isolation:** one host element (`#helium-bookmarks-sidebar-root`) with one
-Shadow DOM root. Page CSS cannot style the sidebar and sidebar CSS cannot leak
-into the page. A duplicate-injection guard guarantees only one sidebar per page.
-
-**Favicons:** each bookmark tries Chromium's `chrome.runtime.getURL("/_favicon/")`
-endpoint first (cached, privacy-preserving, works offline). If that has no icon
-for a site, it falls back to the site's own `/favicon.ico`. If both fail, a
-letter-avatar derived from the bookmark title is shown. No third-party favicon
-provider is used.
-
----
-
-## Icons
-
-The extension toolbar icons (`icons/icon-{16,32,48,128}.png`) are the project's
-brand mark — a blue rounded square with a white `*t` glyph. The 16/32 px sizes
-are copied directly from `favicons/favicon-{16,32}x32.png`; the 48 px and 128 px
-sizes are downsampled from `favicons/android-chrome-{192,512}x{192,512}.png` at
-clean 4:1 ratios.
-
-The full brand favicon set (192/512 px, apple-touch-icon, `.ico`,
-`site.webmanifest`) is preserved under `favicons/`.
-
-A fallback generator is also included (`tools/make-icons.py`, Python stdlib
-only — no Pillow) that draws a simpler bookmark-ribbon glyph in the template
-palette. Only run it if you want to revert to the generated icons:
-
-```sh
-python3 tools/make-icons.py   # overwrites icons/icon-{16,32,48,128}.png
-```
-
----
+`background.js` owns bookmark access, listens to bookmark events, reports the configured shortcut, and routes toolbar/command activation to tabs. `content.js` owns rendering and interaction inside the closed Shadow DOM. No polling, remote scripts, framework, build step, or third-party runtime dependency is used.
 
 ## Troubleshooting
 
-- **Sidebar doesn't appear:** confirm the page is `http(s)`, not a protected
-  page (see limitations). After loading the extension, refresh already-open
-  tabs once — content scripts don't retroactively inject into tabs that were
-  open before installation.
-- **Sidebar vanished after reloading the extension:** the old content script's
-  connection is invalidated. Refresh the page once to reconnect. (This is
-  expected MV3 behavior.)
-- **Bookmarks look empty:** open the bookmarks manager (`helium://bookmarks`)
-  and confirm you have bookmarks in the bar / other bookmarks. Newly added
-  bookmarks appear live without a page refresh.
-- **Shortcut doesn't work:** another extension or the browser may have claimed
-  `Ctrl/⌘+K`. Reassign it at `helium://extensions/shortcuts`.
+- **`Extension context invalidated`:** refresh the affected webpage after reloading the unpacked extension. The old content script cannot be revived by Chromium.
+- **Sidebar does not appear:** confirm the page uses HTTP or HTTPS and refresh tabs that predate installation or reload.
+- **Shortcut does not work:** assign a non-conflicting binding in the browser's extension-shortcuts page.
+- **A favicon shows a letter:** Chromium does not have a cached favicon for that URL. The extension intentionally does not fetch the bookmarked site directly.
