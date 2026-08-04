@@ -2,8 +2,8 @@
   Interaction and layout corrections loaded before content.js.
 
   This prelude stays deliberately narrow. It corrects browser-control,
-  keyboard, persistence-startup, pin alignment, and flat folder presentation
-  without owning the sidebar's state.
+  keyboard, persistence startup, pin alignment, and flat folder presentation
+  without rendering the sidebar itself.
 */
 
 (() => {
@@ -18,37 +18,153 @@
   let flattening = false;
 
   /*
-    content.js loads persisted state before bookmark data arrives, then performs
-    one empty render. Its deleted-folder cleanup sees an empty bookmark tree and
-    would erase every saved folder id. Suppress only that premature empty write.
+    content.js loads the persisted collapse map before bookmark data arrives,
+    then performs one empty render. pruneDeletedFolders() previously interpreted
+    the empty tree as proof that every folder had been deleted and executed:
 
-    There is intentionally no per-page snapshot or restore write here. The
-    previous implementation restored a stale snapshot after the first bookmark
-    message, allowing a refreshed tab to overwrite newer state from another
-    page. Once a real tree has arrived, content.js may prune genuinely deleted
-    folder ids normally. chrome.storage.onChanged remains the single source of
-    cross-page synchronization.
+      delete collapsed[folderId]
+
+    Blocking only chrome.storage.local.set() was insufficient because the map had
+    already been erased in memory. Wrap collapse maps in a short-lived Proxy that
+    rejects deletion until the first real bookmark tree arrives. Normal property
+    writes still work, and deletion becomes normal immediately after tree data is
+    available.
+
+    The same wrapper is applied to startup reads and storage-change events, so a
+    state update received from another tab cannot be erased by an empty startup
+    render either.
   */
+  const nativeStorageGet = chrome.storage.local.get.bind(chrome.storage.local);
   const nativeStorageSet = chrome.storage.local.set.bind(chrome.storage.local);
+  const storageChangedEvent = chrome.storage.onChanged;
+  const nativeStorageChangedAdd =
+    storageChangedEvent.addListener.bind(storageChangedEvent);
+  const nativeStorageChangedRemove =
+    storageChangedEvent.removeListener.bind(storageChangedEvent);
+  const nativeStorageChangedHas =
+    storageChangedEvent.hasListener.bind(storageChangedEvent);
 
-  chrome.storage.local.set = function guardedStorageSet(items, callback) {
-    const next = items?.[STORAGE_COLLAPSED];
-    const isPrematureEmptyPrune =
-      !bookmarkTreeReceived &&
-      next &&
-      typeof next === "object" &&
-      Object.keys(next).length === 0;
+  const proxyToTarget = new WeakMap();
+  const targetToProxy = new WeakMap();
+  const changedListenerWrappers = new WeakMap();
 
-    if (isPrematureEmptyPrune) {
-      if (typeof callback === "function") queueMicrotask(callback);
-      return;
+  function isStateObject(value) {
+    return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function startupSafeCollapsedState(value) {
+    if (!isStateObject(value) || bookmarkTreeReceived) return value;
+    if (proxyToTarget.has(value)) return value;
+
+    const existing = targetToProxy.get(value);
+    if (existing) return existing;
+
+    const proxy = new Proxy(value, {
+      deleteProperty(target, property) {
+        if (!bookmarkTreeReceived) return true;
+        return Reflect.deleteProperty(target, property);
+      },
+    });
+
+    targetToProxy.set(value, proxy);
+    proxyToTarget.set(proxy, value);
+    return proxy;
+  }
+
+  function unwrapCollapsedState(value) {
+    return proxyToTarget.get(value) || value;
+  }
+
+  function wrapStorageResult(result) {
+    if (!result || typeof result !== "object") return result;
+    const value = result[STORAGE_COLLAPSED];
+    if (!isStateObject(value) || bookmarkTreeReceived) return result;
+
+    return {
+      ...result,
+      [STORAGE_COLLAPSED]: startupSafeCollapsedState(value),
+    };
+  }
+
+  chrome.storage.local.get = function startupSafeStorageGet(keys, callback) {
+    if (typeof callback === "function") {
+      return nativeStorageGet(keys, (result) => callback(wrapStorageResult(result)));
     }
 
-    return nativeStorageSet(items, callback);
+    return nativeStorageGet(keys).then(wrapStorageResult);
   };
 
-  /* Mark persistence as ready before content.js handles the first bookmark
-     payload and calls render(), so its normal deleted-folder cleanup is safe. */
+  /* Proxy objects are not guaranteed to be accepted by extension structured
+     cloning. Unwrap and shallow-copy the collapse map before persisting it. */
+  chrome.storage.local.set = function serializableStorageSet(items, callback) {
+    let serializableItems = items;
+
+    if (
+      items &&
+      typeof items === "object" &&
+      Object.prototype.hasOwnProperty.call(items, STORAGE_COLLAPSED)
+    ) {
+      const original = items[STORAGE_COLLAPSED];
+      const unwrapped = unwrapCollapsedState(original);
+      if (unwrapped !== original) {
+        serializableItems = {
+          ...items,
+          [STORAGE_COLLAPSED]: { ...unwrapped },
+        };
+      }
+    }
+
+    return nativeStorageSet(serializableItems, callback);
+  };
+
+  function wrapStorageChanges(changes, areaName) {
+    if (
+      areaName !== "local" ||
+      bookmarkTreeReceived ||
+      !changes ||
+      !changes[STORAGE_COLLAPSED]
+    ) {
+      return changes;
+    }
+
+    const change = changes[STORAGE_COLLAPSED];
+    return {
+      ...changes,
+      [STORAGE_COLLAPSED]: {
+        ...change,
+        oldValue: startupSafeCollapsedState(change.oldValue),
+        newValue: startupSafeCollapsedState(change.newValue),
+      },
+    };
+  }
+
+  storageChangedEvent.addListener = function startupSafeChangedAdd(listener) {
+    if (typeof listener !== "function") {
+      return nativeStorageChangedAdd(listener);
+    }
+
+    let wrapped = changedListenerWrappers.get(listener);
+    if (!wrapped) {
+      wrapped = (changes, areaName) =>
+        listener(wrapStorageChanges(changes, areaName), areaName);
+      changedListenerWrappers.set(listener, wrapped);
+    }
+
+    return nativeStorageChangedAdd(wrapped);
+  };
+
+  storageChangedEvent.removeListener = function startupSafeChangedRemove(listener) {
+    return nativeStorageChangedRemove(
+      changedListenerWrappers.get(listener) || listener
+    );
+  };
+
+  storageChangedEvent.hasListener = function startupSafeChangedHas(listener) {
+    return nativeStorageChangedHas(changedListenerWrappers.get(listener) || listener);
+  };
+
+  /* This listener is registered before content.js receives the Port, so the
+     readiness flag is set before its handleMessage() renders the real tree. */
   const nativeConnect = chrome.runtime.connect.bind(chrome.runtime);
   chrome.runtime.connect = function observedConnect(...args) {
     const port = nativeConnect(...args);
