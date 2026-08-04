@@ -276,6 +276,53 @@
     return `${u}?pageUrl=${encodeURIComponent(pageUrl)}&size=32`;
   }
 
+  /**
+   * Derive the site's own favicon.ico URL from a page URL.
+   * e.g. "https://github.com/foo/bar" -> "https://github.com/favicon.ico"
+   */
+  function siteFaviconUrl(pageUrl) {
+    try {
+      const parsed = new URL(pageUrl);
+      return `${parsed.origin}/favicon.ico`;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Try loading a favicon for a bookmark into the given icon element, using a
+   * fallback chain so we don't show an empty box:
+   *   1. Chromium's _favicon/ endpoint (cached, privacy-preserving, offline)
+   *   2. The site's own /favicon.ico (native cross-origin <img> load)
+   * If every source fails, the letter fallback already in the element stays.
+   */
+  function loadFavicon(icon, pageUrl, fallbackLetter) {
+    const sources = [faviconUrl(pageUrl)];
+    const siteIco = siteFaviconUrl(pageUrl);
+    if (siteIco && siteIco !== sources[0]) sources.push(siteIco);
+
+    let attempt = 0;
+    const tryNext = () => {
+      if (attempt >= sources.length) return; // keep letter fallback
+      const src = sources[attempt++];
+      const img = new Image();
+      img.alt = "";
+      img.referrerPolicy = "no-referrer";
+      img.addEventListener("load", () => {
+        // Only swap in if we actually got a real image (non-zero dimensions).
+        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+          icon.textContent = "";
+          icon.appendChild(img);
+        } else {
+          tryNext();
+        }
+      });
+      img.addEventListener("error", tryNext);
+      img.src = src;
+    };
+    tryNext();
+  }
+
   function safeUrl(url) {
     if (typeof url !== "string") return null;
     const trimmed = url.trim();
@@ -507,23 +554,13 @@
 
     const icon = document.createElement("span");
     icon.className = "favicon";
-    // Letter fallback (template behavior) until/unless the favicon loads.
-    icon.textContent = (bm.title || "?").slice(0, 1).toUpperCase();
+    // Letter fallback (template behavior) shown until a favicon loads, and kept
+    // permanently if every favicon source fails.
+    const fallbackLetter = ((bm.title || "?").trim()[0] || "?").toUpperCase();
+    icon.textContent = fallbackLetter;
 
     if (url) {
-      const img = new Image();
-      img.alt = "";
-      img.loading = "lazy";
-      img.referrerPolicy = "no-referrer";
-      img.addEventListener("load", () => {
-        icon.textContent = "";
-        icon.appendChild(img);
-      });
-      img.addEventListener("error", () => {
-        // Keep the letter fallback; hide the broken image.
-        img.remove();
-      });
-      img.src = faviconUrl(url);
+      loadFavicon(icon, url, fallbackLetter);
     }
 
     const label = document.createElement("span");

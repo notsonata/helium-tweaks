@@ -158,9 +158,11 @@ a large import won't flood the sidebar.
 Shadow DOM root. Page CSS cannot style the sidebar and sidebar CSS cannot leak
 into the page. A duplicate-injection guard guarantees only one sidebar per page.
 
-**Favicons:** `chrome.runtime.getURL("/_favicon/")` with `pageUrl` and
-`size=32`. A letter-avatar fallback shows while loading or when no favicon is
-available. No external favicon provider is used.
+**Favicons:** each bookmark tries Chromium's `chrome.runtime.getURL("/_favicon/")`
+endpoint first (cached, privacy-preserving, works offline). If that has no icon
+for a site, it falls back to the site's own `/favicon.ico`. If both fail, a
+letter-avatar derived from the bookmark title is shown. No third-party favicon
+provider is used.
 
 ---
 
