@@ -155,11 +155,6 @@
     track = document.createElement("div");
     track.id = "overlayScrollbar";
     track.className = "overlay-scrollbar";
-    track.setAttribute("role", "scrollbar");
-    track.setAttribute("aria-controls", "scroll");
-    track.setAttribute("aria-orientation", "vertical");
-    track.setAttribute("aria-valuemin", "0");
-    track.setAttribute("aria-valuenow", "0");
     track.setAttribute("aria-hidden", "true");
 
     thumb = document.createElement("div");
@@ -169,8 +164,6 @@
     sidebar.appendChild(track);
 
     track.addEventListener("pointerdown", handleTrackPointerDown);
-    track.addEventListener("keydown", handleTrackKeydown);
-    track.tabIndex = -1;
   }
 
   function scheduleUpdate() {
@@ -192,13 +185,10 @@
 
     track.classList.toggle("visible", hasOverflow);
     track.setAttribute("aria-hidden", String(!hasOverflow));
-    track.tabIndex = hasOverflow ? 0 : -1;
 
     if (!hasOverflow) {
       thumb.style.height = "0px";
       thumb.style.transform = "translateY(0px)";
-      track.setAttribute("aria-valuemax", "0");
-      track.setAttribute("aria-valuenow", "0");
       return;
     }
 
@@ -217,9 +207,6 @@
 
     thumb.style.height = `${thumbHeight}px`;
     thumb.style.transform = `translateY(${thumbTop}px)`;
-
-    track.setAttribute("aria-valuemax", String(Math.round(scrollRange)));
-    track.setAttribute("aria-valuenow", String(Math.round(scrollArea.scrollTop)));
   }
 
   function handleTrackPointerDown(event) {
@@ -289,41 +276,6 @@
     track.removeEventListener("pointerup", endThumbDrag);
     track.removeEventListener("pointercancel", endThumbDrag);
     dragging = null;
-  }
-
-  function handleTrackKeydown(event) {
-    if (!track.classList.contains("visible")) return;
-
-    const page = Math.max(24, scrollArea.clientHeight * 0.82);
-    let nextTop = null;
-
-    switch (event.key) {
-      case "ArrowUp":
-        nextTop = scrollArea.scrollTop - 32;
-        break;
-      case "ArrowDown":
-        nextTop = scrollArea.scrollTop + 32;
-        break;
-      case "PageUp":
-        nextTop = scrollArea.scrollTop - page;
-        break;
-      case "PageDown":
-        nextTop = scrollArea.scrollTop + page;
-        break;
-      case "Home":
-        nextTop = 0;
-        break;
-      case "End":
-        nextTop = scrollArea.scrollHeight;
-        break;
-      default:
-        return;
-    }
-
-    event.preventDefault();
-    event.stopImmediatePropagation();
-    event.stopPropagation();
-    scrollArea.scrollTo({ top: nextTop, behavior: "smooth" });
   }
 
   function clamp(value, min, max) {
