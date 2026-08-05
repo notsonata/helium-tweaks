@@ -6,8 +6,8 @@
   root's host element), and the demo-page rules, the per-row "more actions"
   button, and its hover/selected title-fade variant have been removed.
 
-  No values below have been "improved". Dimensions, palette, radii, typography,
-  and timings match the template.
+  Typography and row density are tuned against Helium's native macOS vertical
+  tab sidebar: 12px labels, 30px rows, 2px repeated-row spacing, and 16px icons.
 */
 
 :host {
@@ -23,10 +23,10 @@
   --inner-width: calc(var(--panel-width) - (var(--inner-margin) * 2) - 2px);
 
   --search-height: 32px;
-  --row-height: 33px;
+  --row-height: 30px;
   --folder-height: 28px;
 
-  --font-size: 13px;
+  --font-size: 12px;
   --panel: #1d2021;
   --panel-border: #3c4142;
   --control-border: #505657;
@@ -53,9 +53,11 @@
   width: 0;
   height: 0;
   font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "SF Pro Text",
     "Helvetica Neue",
-    Helvetica,
-    Arial,
     sans-serif;
   font-size: var(--font-size);
   -webkit-font-smoothing: antialiased;
@@ -144,7 +146,7 @@
   outline: none;
   color: var(--text-strong);
   background: #1c1f20;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 450;
   letter-spacing: -.006em;
   transition:
@@ -302,8 +304,8 @@
   min-width: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  font-size: 13px;
-  font-weight: 540;
+  font-size: 12px;
+  font-weight: 600;
   letter-spacing: -.008em;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -317,7 +319,7 @@
   border-radius: 999px;
   color: #7f8587;
   background: #222526;
-  font-size: 10px;
+  font-size: 11px;
   font-variant-numeric: tabular-nums;
   line-height: 16px;
   text-align: center;
@@ -382,8 +384,8 @@
    cleanly with no grey overlay. */
 .favicon {
   display: grid;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex: 0 0 auto;
   place-items: center;
   overflow: hidden;
@@ -414,8 +416,8 @@
   flex: 1 1 auto;
   overflow: hidden;
   padding-right: 1px;
-  font-size: 13px;
-  font-weight: 450;
+  font-size: 12px;
+  font-weight: 400;
   letter-spacing: -.008em;
   text-overflow: clip;
   white-space: nowrap;
