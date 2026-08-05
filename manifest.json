@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Helium Bookmarks Sidebar",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "description": "A right-edge bookmark sidebar for Helium with editing, drag-and-drop organization, and a fallback page for restricted browser tabs.",
   "permissions": ["bookmarks", "storage", "favicon"],
   "background": {
@@ -34,6 +34,7 @@
         "bookmark-editor.js",
         "bookmark-dnd.js",
         "bookmark-rename.js",
+        "overlay-scrollbar.js",
         "content.js"
       ],
       "run_at": "document_start",
