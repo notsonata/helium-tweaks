@@ -1,183 +1,362 @@
 "use strict";
 
-const SETTING_KEY = "videoSeparateSpaceEnabled";
-const LEGACY_SETTING_KEY = "youtubeSeparateSpaceEnabled";
+const VIDEO_SETTING_KEY = "videoSeparateSpaceEnabled";
+const LEGACY_VIDEO_SETTING_KEY = "youtubeSeparateSpaceEnabled";
 const STATUS_MESSAGE = "heliumYoutubeSpaceStatus";
 const EXIT_MESSAGE = "heliumYoutubeSpaceExit";
 const COMMAND_NAME = "toggle-bookmarks-sidebar";
+const PINNED_KEY = "heliumBmSidebar:pinned:v1";
+const COLLAPSED_KEY = "heliumBmSidebar:collapsed:v1";
 
-const AUTO_PIP_DEFAULTS = {
+const SYNC_DEFAULTS = Object.freeze({
+  bookmarkSidebarWidth: 210,
+  bookmarkRowHeight: 30,
+  bookmarkFontSize: 12,
+  bookmarkEdgeWidth: 6,
+  bookmarkShowFolderCounts: true,
+  bookmarkRowHover: true,
+  bookmarkScrollbarMode: "auto",
+
   autoPipEnabled: true,
   autoPipExitOnReturn: true,
   autoPipDelayMs: 500,
   autoPipExcludedSites: [],
-};
 
-const toggle = document.getElementById("videoSeparateSpace");
-const autoPipEnabled = document.getElementById("autoPipEnabled");
-const autoPipExitOnReturn = document.getElementById("autoPipExitOnReturn");
-const autoPipDelayMs = document.getElementById("autoPipDelayMs");
-const autoPipExcludedSites = document.getElementById("autoPipExcludedSites");
-const saveStatus = document.getElementById("saveStatus");
-const videoStatus = document.getElementById("videoStatus");
-const exitVideo = document.getElementById("exitVideo");
-const shortcut = document.getElementById("bookmarkShortcut");
-const platformNote = document.getElementById("platformNote");
+  [VIDEO_SETTING_KEY]: true,
+  videoSpaceControlClickEnabled: true,
+  videoSpaceKeyboardEnabled: true,
+  videoSpaceEscapeEnabled: true,
+  videoSpaceFallbackEnabled: true,
+  videoSpaceExcludedSites: [],
+});
 
+const saveTimers = new Map();
 let statusTimer = null;
 
 initialize().catch((error) => {
-  saveStatus.textContent = error?.message || "Settings could not be loaded";
+  showSaved(error?.message || "Settings could not be loaded", true);
 });
 
 async function initialize() {
   document.getElementById("version").textContent =
     `v${chrome.runtime.getManifest().version}`;
 
-  const settings = await chrome.storage.sync.get({
-    [SETTING_KEY]: null,
-    [LEGACY_SETTING_KEY]: true,
-    ...AUTO_PIP_DEFAULTS,
-  });
+  const [syncSettings, localSettings, platform] = await Promise.all([
+    chrome.storage.sync.get({
+      ...SYNC_DEFAULTS,
+      [VIDEO_SETTING_KEY]: null,
+      [LEGACY_VIDEO_SETTING_KEY]: true,
+    }),
+    chrome.storage.local.get({ [PINNED_KEY]: false }),
+    chrome.runtime.getPlatformInfo(),
+  ]);
 
-  toggle.checked =
-    settings[SETTING_KEY] == null
-      ? settings[LEGACY_SETTING_KEY] !== false
-      : settings[SETTING_KEY] !== false;
-
-  if (settings[SETTING_KEY] == null) {
-    await chrome.storage.sync.set({ [SETTING_KEY]: toggle.checked });
+  if (syncSettings[VIDEO_SETTING_KEY] == null) {
+    syncSettings[VIDEO_SETTING_KEY] =
+      syncSettings[LEGACY_VIDEO_SETTING_KEY] !== false;
+    await chrome.storage.sync.set({
+      [VIDEO_SETTING_KEY]: syncSettings[VIDEO_SETTING_KEY],
+    });
   }
 
-  autoPipEnabled.checked = settings.autoPipEnabled !== false;
-  autoPipExitOnReturn.checked = settings.autoPipExitOnReturn !== false;
-  autoPipDelayMs.value = String(normalizeDelay(settings.autoPipDelayMs));
-  autoPipExcludedSites.value = normalizeSites(settings.autoPipExcludedSites).join(", ");
-
-  const platform = await chrome.runtime.getPlatformInfo();
-  if (platform.os === "mac") {
-    platformNote.textContent =
-      "macOS normally places the temporary fullscreen window in its own Space.";
-  } else {
-    platformNote.textContent =
-      "This still creates a separate fullscreen window, but automatic Spaces are macOS-specific.";
-    platformNote.classList.add("warning");
-  }
+  populateBookmarks(syncSettings, localSettings);
+  populateAutoPip(syncSettings);
+  populateFullscreen(syncSettings);
+  bindControls();
+  setPlatformNote(platform);
 
   await refreshShortcut();
   await refreshVideoStatus();
   statusTimer = setInterval(refreshVideoStatus, 1500);
 }
 
-toggle.addEventListener("change", async () => {
-  await chrome.storage.sync.set({ [SETTING_KEY]: toggle.checked });
-  showSaved(
-    toggle.checked
-      ? "Fullscreen video Spaces enabled"
-      : "Fullscreen video Spaces disabled"
+function populateBookmarks(sync, local) {
+  setRange("bookmarkSidebarWidth", sync.bookmarkSidebarWidth, "px");
+  setRange("bookmarkFontSize", sync.bookmarkFontSize, "px");
+  setRange("bookmarkEdgeWidth", sync.bookmarkEdgeWidth, "px");
+
+  document.getElementById("bookmarkRowHeight").value = String(
+    normalizeNumber(sync.bookmarkRowHeight, 26, 38, 30)
   );
-});
+  document.getElementById("bookmarkPinned").checked =
+    local[PINNED_KEY] === true;
+  document.getElementById("bookmarkShowFolderCounts").checked =
+    sync.bookmarkShowFolderCounts !== false;
+  document.getElementById("bookmarkRowHover").checked =
+    sync.bookmarkRowHover !== false;
+  document.getElementById("bookmarkScrollbarMode").value =
+    sync.bookmarkScrollbarMode === "hidden" ? "hidden" : "auto";
 
-autoPipEnabled.addEventListener("change", async () => {
-  await chrome.storage.sync.set({ autoPipEnabled: autoPipEnabled.checked });
-  showSaved(autoPipEnabled.checked ? "Automatic PiP enabled" : "Automatic PiP disabled");
-});
+  updateReservedBookmarkWidth(sync.bookmarkSidebarWidth);
+}
 
-autoPipExitOnReturn.addEventListener("change", async () => {
-  await chrome.storage.sync.set({
-    autoPipExitOnReturn: autoPipExitOnReturn.checked,
+function populateAutoPip(sync) {
+  document.getElementById("autoPipEnabled").checked =
+    sync.autoPipEnabled !== false;
+  document.getElementById("autoPipExitOnReturn").checked =
+    sync.autoPipExitOnReturn !== false;
+  document.getElementById("autoPipDelayMs").value = String(
+    normalizeNumber(sync.autoPipDelayMs, 100, 3000, 500)
+  );
+  document.getElementById("autoPipExcludedSites").value =
+    normalizeSites(sync.autoPipExcludedSites).join(", ");
+}
+
+function populateFullscreen(sync) {
+  document.getElementById("videoSeparateSpace").checked =
+    sync[VIDEO_SETTING_KEY] !== false;
+  document.getElementById("videoSpaceControlClickEnabled").checked =
+    sync.videoSpaceControlClickEnabled !== false;
+  document.getElementById("videoSpaceKeyboardEnabled").checked =
+    sync.videoSpaceKeyboardEnabled !== false;
+  document.getElementById("videoSpaceEscapeEnabled").checked =
+    sync.videoSpaceEscapeEnabled !== false;
+  document.getElementById("videoSpaceFallbackEnabled").checked =
+    sync.videoSpaceFallbackEnabled !== false;
+  document.getElementById("videoSpaceExcludedSites").value =
+    normalizeSites(sync.videoSpaceExcludedSites).join(", ");
+}
+
+function bindControls() {
+  bindRange("bookmarkSidebarWidth", "bookmarkSidebarWidth", "px", (value) => {
+    updateReservedBookmarkWidth(value);
   });
-  showSaved("Automatic PiP settings saved");
-});
+  bindRange("bookmarkFontSize", "bookmarkFontSize", "px");
+  bindRange("bookmarkEdgeWidth", "bookmarkEdgeWidth", "px");
 
-autoPipDelayMs.addEventListener("change", async () => {
-  const value = normalizeDelay(autoPipDelayMs.value);
-  autoPipDelayMs.value = String(value);
-  await chrome.storage.sync.set({ autoPipDelayMs: value });
-  showSaved("Automatic PiP delay saved");
-});
+  bindSelect("bookmarkRowHeight", "bookmarkRowHeight", (value) =>
+    normalizeNumber(value, 26, 38, 30)
+  );
+  bindSelect("bookmarkScrollbarMode", "bookmarkScrollbarMode", (value) =>
+    value === "hidden" ? "hidden" : "auto"
+  );
+  bindSyncToggle("bookmarkShowFolderCounts", "bookmarkShowFolderCounts");
+  bindSyncToggle("bookmarkRowHover", "bookmarkRowHover");
 
-autoPipExcludedSites.addEventListener("change", async () => {
-  const sites = normalizeSites(autoPipExcludedSites.value);
-  autoPipExcludedSites.value = sites.join(", ");
-  await chrome.storage.sync.set({ autoPipExcludedSites: sites });
-  showSaved("Excluded sites saved");
-});
+  document.getElementById("bookmarkPinned").addEventListener("change", async (event) => {
+    await chrome.storage.local.set({ [PINNED_KEY]: event.target.checked });
+    showSaved(event.target.checked ? "Bookmark sidebar pinned" : "Bookmark sidebar unpinned");
+  });
 
-document.getElementById("manageShortcuts").addEventListener("click", () => {
-  chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
-});
+  bindSyncToggle("autoPipEnabled", "autoPipEnabled");
+  bindSyncToggle("autoPipExitOnReturn", "autoPipExitOnReturn");
+  bindNumber("autoPipDelayMs", "autoPipDelayMs", 100, 3000, 500);
+  bindSiteList("autoPipExcludedSites", "autoPipExcludedSites");
 
-document.getElementById("openBookmarks").addEventListener("click", async () => {
+  bindSyncToggle("videoSeparateSpace", VIDEO_SETTING_KEY);
+  bindSyncToggle(
+    "videoSpaceControlClickEnabled",
+    "videoSpaceControlClickEnabled"
+  );
+  bindSyncToggle("videoSpaceKeyboardEnabled", "videoSpaceKeyboardEnabled");
+  bindSyncToggle("videoSpaceEscapeEnabled", "videoSpaceEscapeEnabled");
+  bindSyncToggle("videoSpaceFallbackEnabled", "videoSpaceFallbackEnabled");
+  bindSiteList("videoSpaceExcludedSites", "videoSpaceExcludedSites");
+
+  document.getElementById("resetCollapsedFolders").addEventListener("click", async () => {
+    await chrome.storage.local.remove(COLLAPSED_KEY);
+    showSaved("All bookmark folders expanded");
+  });
+
+  document.getElementById("openStandaloneBookmarks").addEventListener("click", () => {
+    chrome.tabs.create({ url: chrome.runtime.getURL("bookmarks.html") });
+  });
+
+  document.getElementById("manageShortcuts").addEventListener("click", () => {
+    chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
+  });
+
+  document.getElementById("refreshShortcut").addEventListener("click", async () => {
+    await refreshShortcut();
+    showSaved("Shortcut assignment refreshed");
+  });
+
+  document.getElementById("exitVideo").addEventListener("click", exitActiveVideo);
+  document.getElementById("resetAllSettings").addEventListener("click", resetAllSettings);
+
+  window.addEventListener("unload", () => clearInterval(statusTimer));
+}
+
+function bindRange(id, key, suffix, onInput = null) {
+  const input = document.getElementById(id);
+  input.addEventListener("input", () => {
+    const value = Number(input.value);
+    updateRangeOutput(id, suffix);
+    onInput?.(value);
+    scheduleSyncSave(key, value, `${labelFor(id)} saved`);
+  });
+}
+
+function bindSelect(id, key, normalizeValue = (value) => value) {
+  const input = document.getElementById(id);
+  input.addEventListener("change", async () => {
+    const value = normalizeValue(input.value);
+    await chrome.storage.sync.set({ [key]: value });
+    showSaved(`${labelFor(id)} saved`);
+  });
+}
+
+function bindSyncToggle(id, key) {
+  const input = document.getElementById(id);
+  input.addEventListener("change", async () => {
+    await chrome.storage.sync.set({ [key]: input.checked });
+    showSaved(`${labelFor(id)} ${input.checked ? "enabled" : "disabled"}`);
+  });
+}
+
+function bindNumber(id, key, min, max, fallback) {
+  const input = document.getElementById(id);
+  input.addEventListener("change", async () => {
+    const value = normalizeNumber(input.value, min, max, fallback);
+    input.value = String(value);
+    await chrome.storage.sync.set({ [key]: value });
+    showSaved(`${labelFor(id)} saved`);
+  });
+}
+
+function bindSiteList(id, key) {
+  const input = document.getElementById(id);
+  input.addEventListener("change", async () => {
+    const sites = normalizeSites(input.value);
+    input.value = sites.join(", ");
+    await chrome.storage.sync.set({ [key]: sites });
+    showSaved(`${labelFor(id)} saved`);
+  });
+}
+
+function scheduleSyncSave(key, value, message) {
+  clearTimeout(saveTimers.get(key));
+  saveTimers.set(
+    key,
+    setTimeout(async () => {
+      saveTimers.delete(key);
+      await chrome.storage.sync.set({ [key]: value });
+      showSaved(message);
+    }, 120)
+  );
+}
+
+async function exitActiveVideo() {
+  const button = document.getElementById("exitVideo");
+  const status = document.getElementById("videoStatus");
+  button.disabled = true;
+  status.textContent = "Restoring video…";
+
   try {
-    const response = await sendMessage({ type: "heliumOpenBookmarksSidebar" });
-    if (!response?.ok) throw new Error(response?.error || "Could not open bookmarks");
-  } catch (error) {
-    showSaved(error?.message || "Could not open bookmarks");
-  }
-});
-
-exitVideo.addEventListener("click", async () => {
-  exitVideo.disabled = true;
-  videoStatus.textContent = "Restoring video…";
-  try {
-    const status = await sendMessage({ type: STATUS_MESSAGE });
-    if (status?.active && status.sessionId) {
+    const current = await sendMessage({ type: STATUS_MESSAGE });
+    if (current?.active && current.sessionId) {
       await sendMessage({
         type: EXIT_MESSAGE,
-        sessionId: status.sessionId,
+        sessionId: current.sessionId,
         reason: "options-page",
       });
     }
   } finally {
     await refreshVideoStatus();
   }
-});
+}
 
-window.addEventListener("unload", () => clearInterval(statusTimer));
+async function resetAllSettings() {
+  const confirmed = window.confirm(
+    "Reset all Helium Tweaks preferences? Browser bookmarks will not be deleted."
+  );
+  if (!confirmed) return;
+
+  await Promise.all([
+    chrome.storage.sync.set({ ...SYNC_DEFAULTS }),
+    chrome.storage.local.remove([PINNED_KEY, COLLAPSED_KEY]),
+  ]);
+  location.reload();
+}
 
 async function refreshShortcut() {
   const commands = await chrome.commands.getAll();
   const item = commands.find((command) => command.name === COMMAND_NAME);
-  shortcut.textContent = item?.shortcut || "Not assigned";
+  document.getElementById("bookmarkShortcut").textContent =
+    item?.shortcut || "Not assigned";
 }
 
 async function refreshVideoStatus() {
+  const button = document.getElementById("exitVideo");
+  const status = document.getElementById("videoStatus");
+
   try {
-    const status = await sendMessage({ type: STATUS_MESSAGE });
-    const active = Boolean(status?.active);
-    exitVideo.disabled = !active;
-    videoStatus.textContent = active
-      ? `${status.count || 1} fullscreen video session active`
+    const current = await sendMessage({ type: STATUS_MESSAGE });
+    const active = Boolean(current?.active);
+    button.disabled = !active;
+    status.textContent = active
+      ? `${current.count || 1} fullscreen video session active`
       : "No fullscreen video session";
   } catch {
-    exitVideo.disabled = true;
-    videoStatus.textContent = "Session status unavailable";
+    button.disabled = true;
+    status.textContent = "Session status unavailable";
   }
 }
 
-function normalizeDelay(value) {
+function setPlatformNote(platform) {
+  const note = document.getElementById("platformNote");
+  if (platform.os === "mac") {
+    note.textContent =
+      "macOS normally places the temporary fullscreen popup in its own Space.";
+  } else {
+    note.textContent =
+      "A separate fullscreen window is still created, but automatic Spaces are macOS-specific.";
+    note.classList.add("warning");
+  }
+}
+
+function setRange(id, value, suffix) {
+  const input = document.getElementById(id);
+  input.value = String(value);
+  updateRangeOutput(id, suffix);
+}
+
+function updateRangeOutput(id, suffix) {
+  const input = document.getElementById(id);
+  document.getElementById(`${id}Value`).textContent = `${input.value}${suffix}`;
+}
+
+function updateReservedBookmarkWidth(value) {
+  const width = normalizeNumber(value, 180, 420, 210);
+  document.documentElement.style.setProperty(
+    "--settings-bookmark-width",
+    `${width}px`
+  );
+}
+
+function normalizeNumber(value, min, max, fallback) {
   const number = Number(value);
-  return Number.isFinite(number)
-    ? Math.min(3000, Math.max(100, Math.round(number)))
-    : AUTO_PIP_DEFAULTS.autoPipDelayMs;
+  if (!Number.isFinite(number)) return fallback;
+  return Math.min(max, Math.max(min, Math.round(number)));
 }
 
 function normalizeSites(value) {
   const entries = Array.isArray(value)
     ? value
     : String(value || "").split(/[\n,]+/);
-  return [...new Set(entries
-    .map((entry) => String(entry).trim().toLowerCase())
-    .map((entry) => entry.replace(/^https?:\/\//, "").split("/")[0])
-    .filter(Boolean))];
+
+  return [
+    ...new Set(
+      entries
+        .map((entry) => String(entry).trim().toLowerCase())
+        .map((entry) => entry.replace(/^https?:\/\//, "").split("/")[0])
+        .filter(Boolean)
+    ),
+  ];
 }
 
-function showSaved(message) {
-  saveStatus.textContent = message;
+function labelFor(id) {
+  return document.querySelector(`label[for="${id}"]`)?.textContent?.trim() || "Setting";
+}
+
+function showSaved(message, error = false) {
+  const element = document.getElementById("saveStatus");
+  element.textContent = message;
+  element.classList.toggle("error", error);
+  element.classList.add("visible");
   clearTimeout(showSaved.timer);
   showSaved.timer = setTimeout(() => {
-    saveStatus.textContent = "";
+    element.classList.remove("visible", "error");
   }, 1800);
 }
 
