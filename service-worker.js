@@ -6,6 +6,6 @@ importScripts(
   "fallback-background.js",
   "shortcut-background.js",
   "video-space-debug-background.js",
-  "video-space-transition-guard.js",
+  "video-space-window-state.js",
   "video-space-background.js"
 );
