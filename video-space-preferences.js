@@ -24,9 +24,7 @@
   let captured = 0;
 
   const nativeAddEventListener = EventTarget.prototype.addEventListener;
-  const restoreTimer = setTimeout(restorePrototype, 15000);
-
-  EventTarget.prototype.addEventListener = function preferenceAwareAdd(
+  const patchedAddEventListener = function preferenceAwareAdd(
     type,
     listener,
     options
@@ -34,6 +32,9 @@
     const wrapped = wrapKnownVideoSpaceListener(this, type, listener);
     return nativeAddEventListener.call(this, type, wrapped, options);
   };
+
+  EventTarget.prototype.addEventListener = patchedAddEventListener;
+  const restoreTimer = setTimeout(restorePrototype, 15000);
 
   loadConfig();
 
@@ -103,14 +104,9 @@
 
   function restorePrototype() {
     clearTimeout(restoreTimer);
-    if (EventTarget.prototype.addEventListener === preferenceAwareAdd) {
+    if (EventTarget.prototype.addEventListener === patchedAddEventListener) {
       EventTarget.prototype.addEventListener = nativeAddEventListener;
     }
-  }
-
-  function preferenceAwareAdd(type, listener, options) {
-    const wrapped = wrapKnownVideoSpaceListener(this, type, listener);
-    return nativeAddEventListener.call(this, type, wrapped, options);
   }
 
   async function loadConfig() {
