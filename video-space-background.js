@@ -1,7 +1,7 @@
 /*
   PR #17-style separate-Space video fullscreen.
 
-  The same tab is moved into a temporary normal Helium window, the page isolates
+  The same tab is moved into a temporary popup Helium window, the page isolates
   its detected player, and that window is switched to browser fullscreen. A
   placeholder remains at the tab's original position and restores the same tab.
 */
@@ -138,7 +138,7 @@
 
       videoWindow = await chrome.windows.create({
         tabId: tab.id,
-        type: "normal",
+        type: "popup",
         focused: true,
       });
       if (typeof videoWindow?.id !== "number") {
@@ -351,7 +351,10 @@
     if (loadPromise) return loadPromise;
     loadPromise = (async () => {
       if (!chrome.storage.session) return;
-      const result = await chrome.storage.session.get([STORAGE_KEY, LEGACY_STORAGE_KEY]);
+      const result = await chrome.storage.session.get([
+        STORAGE_KEY,
+        LEGACY_STORAGE_KEY,
+      ]);
       const stored = Array.isArray(result[STORAGE_KEY])
         ? result[STORAGE_KEY]
         : result[LEGACY_STORAGE_KEY];
@@ -366,7 +369,9 @@
 
   async function persist() {
     if (!chrome.storage.session) return;
-    await chrome.storage.session.set({ [STORAGE_KEY]: [...sessions.values()] });
+    await chrome.storage.session.set({
+      [STORAGE_KEY]: [...sessions.values()],
+    });
   }
 
   async function enabled() {
@@ -384,7 +389,9 @@
   }
 
   function findByPlaceholderTab(tabId) {
-    return [...sessions.values()].find((item) => item.placeholderTabId === tabId);
+    return [...sessions.values()].find(
+      (item) => item.placeholderTabId === tabId
+    );
   }
 
   function findByFullscreenWindow(windowId) {
@@ -408,8 +415,14 @@
   }
 
   async function moveBack(tab) {
-    await chrome.tabs.move(tab.id, { windowId: tab.windowId, index: tab.index });
-    await chrome.tabs.update(tab.id, { active: true, pinned: tab.pinned });
+    await chrome.tabs.move(tab.id, {
+      windowId: tab.windowId,
+      index: tab.index,
+    });
+    await chrome.tabs.update(tab.id, {
+      active: true,
+      pinned: tab.pinned,
+    });
     await chrome.windows.update(tab.windowId, { focused: true });
   }
 
@@ -454,7 +467,10 @@
   }
 
   function makeId() {
-    return crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    return (
+      crypto?.randomUUID?.() ||
+      `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    );
   }
 
   function delay(ms) {
