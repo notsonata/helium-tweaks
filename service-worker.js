@@ -5,5 +5,6 @@ importScripts(
   "bookmark-rename-background.js",
   "fallback-background.js",
   "shortcut-background.js",
+  "video-space-debug-background.js",
   "video-space-background.js"
 );
