@@ -25,7 +25,6 @@ const SYNC_DEFAULTS = Object.freeze({
   [VIDEO_SETTING_KEY]: true,
   videoSpaceControlClickEnabled: true,
   videoSpaceKeyboardEnabled: true,
-  videoSpaceEscapeEnabled: true,
   videoSpaceFallbackEnabled: true,
   videoSpaceExcludedSites: [],
 });
@@ -109,8 +108,6 @@ function populateFullscreen(sync) {
     sync.videoSpaceControlClickEnabled !== false;
   document.getElementById("videoSpaceKeyboardEnabled").checked =
     sync.videoSpaceKeyboardEnabled !== false;
-  document.getElementById("videoSpaceEscapeEnabled").checked =
-    sync.videoSpaceEscapeEnabled !== false;
   document.getElementById("videoSpaceFallbackEnabled").checked =
     sync.videoSpaceFallbackEnabled !== false;
   document.getElementById("videoSpaceExcludedSites").value =
@@ -149,7 +146,6 @@ function bindControls() {
     "videoSpaceControlClickEnabled"
   );
   bindSyncToggle("videoSpaceKeyboardEnabled", "videoSpaceKeyboardEnabled");
-  bindSyncToggle("videoSpaceEscapeEnabled", "videoSpaceEscapeEnabled");
   bindSyncToggle("videoSpaceFallbackEnabled", "videoSpaceFallbackEnabled");
   bindSiteList("videoSpaceExcludedSites", "videoSpaceExcludedSites");
 
