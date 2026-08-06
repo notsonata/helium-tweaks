@@ -137,12 +137,7 @@
 
   function isFullscreenButtonEvent(event) {
     return event.composedPath().some((item) => {
-      return (
-        item instanceof Element &&
-        item.matches(
-          ".ytp-fullscreen-button, .ytp-miniplayer-expand-watch-page-button"
-        )
-      );
+      return item instanceof Element && item.matches(".ytp-fullscreen-button");
     });
   }
 
