@@ -1,16 +1,17 @@
 /*
-  Separate macOS Space fullscreen for YouTube.
+  Separate macOS Space fullscreen for fullscreen web video.
 
-  The same YouTube tab is moved into a temporary normal Helium window, then the
-  window is switched to the browser's fullscreen state. macOS normally assigns
-  that fullscreen window its own Space. A placeholder tab remains at the
-  original position and can restore the video tab.
+  A page first enters its own real Fullscreen API state. The same tab is then
+  moved into a temporary Helium window and that window enters browser fullscreen,
+  which macOS normally places in a separate Space. A placeholder tab remains at
+  the original position and restores the video tab.
 */
 
 (() => {
   "use strict";
 
-  const SETTING_KEY = "youtubeSeparateSpaceEnabled";
+  const SETTING_KEY = "videoSeparateSpaceEnabled";
+  const LEGACY_SETTING_KEY = "youtubeSeparateSpaceEnabled";
   const SESSION_STORAGE_KEY = "heliumYoutubeSpaceSessions:v1";
   const ENTER_MESSAGE = "heliumYoutubeSpaceEnter";
   const EXIT_MESSAGE = "heliumYoutubeSpaceExit";
@@ -64,15 +65,23 @@
     });
   });
 
-  chrome.tabs.onRemoved.addListener((tabId, removeInfo) => {
-    handleTabRemoved(tabId, removeInfo).catch((error) => {
+  chrome.tabs.onRemoved.addListener((tabId) => {
+    handleTabRemoved(tabId).catch((error) => {
       console.error("[helium-tweaks] fullscreen tab cleanup failed:", error);
     });
   });
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "sync" || !changes[SETTING_KEY]) return;
-    if (changes[SETTING_KEY].newValue === false) {
+    if (areaName !== "sync") return;
+    const newSetting = changes[SETTING_KEY];
+    const legacySetting = changes[LEGACY_SETTING_KEY];
+    if (!newSetting && !legacySetting) return;
+
+    const disabled = newSetting
+      ? newSetting.newValue === false
+      : legacySetting.newValue === false;
+
+    if (disabled) {
       restoreAllSessions("setting-disabled").catch((error) => {
         console.error("[helium-tweaks] could not exit active video session:", error);
       });
@@ -87,10 +96,10 @@
     await ensureLoaded();
 
     if (!(await settingEnabled())) {
-      throw new Error("Separate-Space YouTube fullscreen is disabled");
+      throw new Error("Separate-Space video fullscreen is disabled");
     }
     if (!senderTab || typeof senderTab.id !== "number") {
-      throw new Error("The YouTube tab is unavailable");
+      throw new Error("The fullscreen video tab is unavailable");
     }
 
     const existing = findSessionByVideoTab(senderTab.id);
@@ -101,12 +110,12 @@
       throw new Error("Separate-Space fullscreen is not available in Incognito");
     }
     if (typeof tab.windowId !== "number" || typeof tab.index !== "number") {
-      throw new Error("The YouTube tab position is unavailable");
+      throw new Error("The video tab position is unavailable");
     }
 
     const originalWindow = await chrome.windows.get(tab.windowId);
     if (originalWindow.type !== "normal") {
-      throw new Error("The YouTube tab must be in a normal browser window");
+      throw new Error("The video tab must be in a normal browser window");
     }
     if (originalWindow.state === "fullscreen") {
       throw new Error("Exit the current browser fullscreen window first");
@@ -149,7 +158,7 @@
         seenFullscreen: false,
         createdAt: Date.now(),
         enteredAt: 0,
-        reason: String(reason || "unknown").slice(0, 80),
+        reason: String(reason || "document-fullscreen").slice(0, 80),
       };
 
       sessions.set(sessionId, session);
@@ -186,7 +195,10 @@
               windowId: tab.windowId,
               index: tab.index,
             });
-            await chrome.tabs.update(tab.id, { active: true, pinned: tab.pinned });
+            await chrome.tabs.update(tab.id, {
+              active: true,
+              pinned: tab.pinned,
+            });
             await chrome.windows.update(tab.windowId, { focused: true });
           } catch {
             /* Preserve the original error; best-effort rollback only. */
@@ -426,8 +438,13 @@
   }
 
   async function settingEnabled() {
-    const result = await chrome.storage.sync.get({ [SETTING_KEY]: true });
-    return result[SETTING_KEY] !== false;
+    const result = await chrome.storage.sync.get({
+      [SETTING_KEY]: null,
+      [LEGACY_SETTING_KEY]: true,
+    });
+    return result[SETTING_KEY] == null
+      ? result[LEGACY_SETTING_KEY] !== false
+      : result[SETTING_KEY] !== false;
   }
 
   function findSessionByVideoTab(tabId) {
@@ -457,7 +474,7 @@
       }
       await delay(50);
     }
-    throw lastError || new Error("The YouTube page did not answer");
+    throw lastError || new Error("The fullscreen video page did not answer");
   }
 
   async function safeGetTab(tabId) {
