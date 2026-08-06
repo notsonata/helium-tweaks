@@ -19,6 +19,7 @@
   const RETURN = "heliumAutoPiPReturn";
   const SESSION_KEY = "heliumVideoSpaceSessions:v2";
   const LEGACY_SESSION_KEY = "heliumYoutubeSpaceSessions:v1";
+  const PLACEHOLDER_URL = chrome.runtime.getURL("video-placeholder.html");
 
   const activeTabByWindow = new Map();
   const pendingByTab = new Map();
@@ -40,7 +41,10 @@
       return;
     }
 
-    if (areaName === "session" && (changes[SESSION_KEY] || changes[LEGACY_SESSION_KEY])) {
+    if (
+      areaName === "session" &&
+      (changes[SESSION_KEY] || changes[LEGACY_SESSION_KEY])
+    ) {
       const current = changes[SESSION_KEY]?.newValue;
       const legacy = changes[LEGACY_SESSION_KEY]?.newValue;
       replaceFullscreenTabs(Array.isArray(current) ? current : legacy);
@@ -144,6 +148,11 @@
 
     if (!config.autoPipEnabled) return;
 
+    if (await isRestorePlaceholder(activeTabId)) {
+      suppressTab(previousTabId, 7000);
+      return;
+    }
+
     if (
       config.autoPipExitOnReturn &&
       typeof activeTabId === "number" &&
@@ -178,6 +187,16 @@
       }
     }, delay);
     pendingByTab.set(tabId, timer);
+  }
+
+  async function isRestorePlaceholder(tabId) {
+    if (typeof tabId !== "number") return false;
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      return String(tab.url || "").startsWith(PLACEHOLDER_URL);
+    } catch {
+      return false;
+    }
   }
 
   function suppressTab(tabId, durationMs = 5000) {
