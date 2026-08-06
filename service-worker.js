@@ -5,5 +5,6 @@ importScripts(
   "bookmark-rename-background.js",
   "fallback-background.js",
   "shortcut-background.js",
+  "auto-pip-background.js",
   "video-space-background.js"
 );
