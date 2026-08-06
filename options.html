@@ -47,6 +47,53 @@
         </div>
       </section>
 
+      <section class="settings-card" aria-labelledby="pip-heading">
+        <div class="setting-row">
+          <div class="setting-copy">
+            <h2 id="pip-heading">Automatic Picture-in-Picture</h2>
+            <p>
+              Enter PiP when you switch away from a tab with a playing video.
+              Fullscreen video transfers and restore-placeholder activations are
+              excluded automatically.
+            </p>
+          </div>
+
+          <label class="switch">
+            <input id="autoPipEnabled" type="checkbox">
+            <span class="switch-track" aria-hidden="true">
+              <span class="switch-thumb"></span>
+            </span>
+            <span class="sr-only">Enable automatic Picture-in-Picture</span>
+          </label>
+        </div>
+
+        <div class="field-grid">
+          <label class="checkbox-row">
+            <input id="autoPipExitOnReturn" type="checkbox">
+            <span>Exit PiP when returning to the video tab</span>
+          </label>
+
+          <label class="field-row">
+            <span>Tab-switch delay</span>
+            <span class="number-control">
+              <input id="autoPipDelayMs" type="number" min="100" max="3000" step="50">
+              <span>ms</span>
+            </span>
+          </label>
+
+          <label class="field-row field-row-stacked">
+            <span>Excluded sites</span>
+            <textarea id="autoPipExcludedSites" rows="3" placeholder="meet.google.com, teams.microsoft.com"></textarea>
+            <small>Comma-separated hostnames. Subdomains are included.</small>
+          </label>
+        </div>
+
+        <div class="card-note warning">
+          Disable the separate Better Auto PiP extension before enabling this.
+          Extensions cannot reliably cancel another extension's PiP request.
+        </div>
+      </section>
+
       <section class="settings-card" aria-labelledby="bookmarks-heading">
         <div class="setting-copy">
           <h2 id="bookmarks-heading">Bookmarks sidebar</h2>
