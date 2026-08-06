@@ -2,7 +2,7 @@
   Preference gate for the existing fullscreen-video controller.
 
   The working video-space-content.js implementation is left unchanged. This
-  prelude wraps only its four event listeners while they are registered, then
+  prelude wraps only its event listeners while they are registered, then
   restores EventTarget.prototype.addEventListener. Disabled triggers fall
   through to the website's own native fullscreen handling.
 */
@@ -15,7 +15,6 @@
   const DEFAULTS = Object.freeze({
     videoSpaceControlClickEnabled: true,
     videoSpaceKeyboardEnabled: true,
-    videoSpaceEscapeEnabled: true,
     videoSpaceFallbackEnabled: true,
     videoSpaceExcludedSites: [],
   });
@@ -77,7 +76,6 @@
         if (isExcludedSite()) return;
         const key = String(event?.key || "").toLowerCase();
         if (key === "f" && !config.videoSpaceKeyboardEnabled) return;
-        if (key === "escape" && !config.videoSpaceEscapeEnabled) return;
         return listener.call(this, event);
       });
     }
