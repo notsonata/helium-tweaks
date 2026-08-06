@@ -1,15 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Helium Tweaks",
-  "version": "1.9.0",
-  "description": "Helium bookmark tools, separate-Space fullscreen video, and fullscreen-safe Auto PiP.",
+  "version": "2.0.0",
+  "description": "Helium bookmark tools, fullscreen video Spaces, fullscreen-safe Auto PiP, and comprehensive settings.",
   "permissions": ["bookmarks", "storage", "favicon"],
   "background": {
     "service_worker": "service-worker.js"
   },
   "action": {
     "default_title": "Open Helium Tweaks settings",
-    "default_popup": "options-launcher.html",
     "default_icon": {
       "16": "icons/icon-16.png",
       "32": "icons/icon-32.png",
@@ -19,7 +18,7 @@
   },
   "options_ui": {
     "page": "options.html",
-    "open_in_tab": false
+    "open_in_tab": true
   },
   "commands": {
     "toggle-bookmarks-sidebar": {
@@ -35,6 +34,7 @@
       "matches": ["http://*/*", "https://*/*"],
       "js": [
         "sidebar-fixes.js",
+        "sidebar-settings.js",
         "hover-controller.js",
         "bookmark-editor.js",
         "bookmark-dnd.js",
@@ -48,7 +48,11 @@
     },
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["video-space-content.js", "auto-pip-content.js"],
+      "js": [
+        "video-space-preferences.js",
+        "video-space-content.js",
+        "auto-pip-content.js"
+      ],
       "run_at": "document_start",
       "all_frames": false
     }
