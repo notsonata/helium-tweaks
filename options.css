@@ -1,0 +1,224 @@
+:root {
+  color-scheme: dark;
+  --panel: #1d2021;
+  --panel-raised: #242829;
+  --border: #3b4142;
+  --text: #e7e9e9;
+  --muted: #9aa0a2;
+  --dim: #737a7c;
+  --control: #303536;
+  --control-hover: #3a4041;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  color: var(--text);
+  background: var(--panel);
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.settings {
+  width: min(720px, 100%);
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.settings-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.eyebrow {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+h1, h2, p { margin-top: 0; }
+
+h1 {
+  margin-bottom: 0;
+  font-size: 24px;
+  font-weight: 650;
+  letter-spacing: -.025em;
+}
+
+h2 {
+  margin-bottom: 6px;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: -.012em;
+}
+
+.setting-copy p {
+  max-width: 560px;
+  margin-bottom: 0;
+  color: var(--muted);
+  line-height: 1.55;
+}
+
+.version {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.settings-card {
+  margin-bottom: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-raised);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .18);
+}
+
+.setting-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  cursor: pointer;
+}
+
+.switch input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.switch-track {
+  display: block;
+  width: 38px;
+  height: 22px;
+  padding: 2px;
+  border: 1px solid #4b5253;
+  border-radius: 999px;
+  background: #313637;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.switch-thumb {
+  display: block;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #adb3b4;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, .42);
+  transition: transform 140ms cubic-bezier(.2, .8, .2, 1), background 120ms ease;
+}
+
+.switch input:checked + .switch-track {
+  border-color: #858c8e;
+  background: #666d6f;
+}
+
+.switch input:checked + .switch-track .switch-thumb {
+  background: #f0f2f2;
+  transform: translateX(16px);
+}
+
+.switch input:focus-visible + .switch-track {
+  outline: 2px solid #81898b;
+  outline-offset: 2px;
+}
+
+.card-note {
+  min-height: 17px;
+  margin-top: 12px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.card-note.warning { color: #d2b48b; }
+
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.button {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px solid #495051;
+  border-radius: 7px;
+  color: var(--text);
+  background: var(--control);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) { background: var(--control-hover); }
+.button:disabled { opacity: .42; cursor: default; }
+.button.danger:not(:disabled) { color: #f0cccc; border-color: #6a4a4a; }
+
+.shortcut-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px solid #353b3c;
+  border-radius: 8px;
+  color: var(--muted);
+  background: #202425;
+}
+
+kbd {
+  padding: 3px 7px;
+  border: 1px solid #4a5152;
+  border-bottom-color: #656c6e;
+  border-radius: 5px;
+  color: var(--text);
+  background: #2b3031;
+  font: 11px system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+.status, .save-status {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.save-status {
+  min-height: 16px;
+  margin: 4px 2px 0;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 520px) {
+  .settings { padding: 16px; }
+  .setting-row { gap: 14px; }
+  .card-actions { align-items: stretch; flex-direction: column; }
+  .button { width: 100%; }
+  .status { text-align: center; }
+}

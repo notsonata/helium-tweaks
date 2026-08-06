@@ -1,0 +1,38 @@
+:root { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+
+html, body { min-height: 100%; }
+
+body {
+  margin: 0;
+  background: #151819;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.restore {
+  width: 100vw;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 10px;
+  padding: 32px;
+  border: 0;
+  color: #e8eaea;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(255, 255, 255, .045), transparent 35%),
+    #151819;
+  font: inherit;
+  cursor: pointer;
+}
+
+.restore:hover { background-color: #191d1e; }
+.restore:focus-visible { outline: 2px solid #7d8587; outline-offset: -5px; }
+.restore svg { width: 32px; height: 32px; color: #aeb4b5; margin-bottom: 4px; }
+.title { font-size: 16px; font-weight: 620; letter-spacing: -.015em; }
+.copy { color: #8e9597; font-size: 12px; }
+.restore.pending { cursor: wait; }
+.restore.pending .title { color: #b9bebe; }

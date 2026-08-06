@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Helium Tweaks settings</title>
+    <link rel="stylesheet" href="options.css">
+  </head>
+  <body>
+    <main class="settings">
+      <header class="settings-header">
+        <div>
+          <p class="eyebrow">Helium Tweaks</p>
+          <h1>Settings</h1>
+        </div>
+        <span class="version" id="version"></span>
+      </header>
+
+      <section class="settings-card" aria-labelledby="video-heading">
+        <div class="setting-row">
+          <div class="setting-copy">
+            <h2 id="video-heading">YouTube fullscreen Space</h2>
+            <p>
+              Open YouTube fullscreen videos in a temporary fullscreen Helium
+              window. On macOS, the window is placed in its own Space while a
+              restore page remains in the original window.
+            </p>
+          </div>
+
+          <label class="switch">
+            <input id="youtubeSeparateSpace" type="checkbox">
+            <span class="switch-track" aria-hidden="true">
+              <span class="switch-thumb"></span>
+            </span>
+            <span class="sr-only">Enable separate-Space YouTube fullscreen</span>
+          </label>
+        </div>
+
+        <div class="card-note" id="platformNote"></div>
+
+        <div class="card-actions">
+          <button class="button danger" id="exitVideo" type="button" disabled>
+            Exit active fullscreen video
+          </button>
+          <span class="status" id="videoStatus" role="status" aria-live="polite"></span>
+        </div>
+      </section>
+
+      <section class="settings-card" aria-labelledby="bookmarks-heading">
+        <div class="setting-copy">
+          <h2 id="bookmarks-heading">Bookmarks sidebar</h2>
+          <p>
+            The toolbar button opens this settings page. Use the keyboard
+            shortcut to open and focus the bookmark sidebar on the current tab.
+          </p>
+        </div>
+
+        <div class="shortcut-row">
+          <span>Current shortcut</span>
+          <kbd id="bookmarkShortcut">Not assigned</kbd>
+        </div>
+
+        <div class="card-actions">
+          <button class="button" id="manageShortcuts" type="button">
+            Manage shortcuts
+          </button>
+          <button class="button" id="openBookmarks" type="button">
+            Open bookmarks page
+          </button>
+        </div>
+      </section>
+
+      <p class="save-status" id="saveStatus" role="status" aria-live="polite"></p>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>
