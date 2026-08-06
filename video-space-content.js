@@ -1,7 +1,7 @@
 /*
   Generic PR #17-style video fullscreen interception.
 
-  Known fullscreen controls are intercepted before the site enters document
+  Actual fullscreen controls are intercepted before the site enters document
   fullscreen. A fullscreenchange fallback handles players whose controls cannot
   be identified. The exact player is marked before the tab is moved so the same
   element and its controls can fill the temporary Helium window.
@@ -23,6 +23,24 @@
   const TARGET = "data-helium-video-space-target";
   const PATH = "data-helium-video-space-path";
   const STYLE_ID = "helium-video-space-style";
+
+  const KNOWN_FULLSCREEN_CONTROL_SELECTOR = [
+    ".ytp-fullscreen-button",
+    "[data-plyr='fullscreen']",
+    ".vjs-fullscreen-control",
+    ".jw-icon-fullscreen",
+    ".shaka-fullscreen-button",
+    "[data-testid*='fullscreen' i]",
+    "[data-testid*='full-screen' i]",
+  ].join(", ");
+
+  const INTERACTIVE_SELECTOR = [
+    "button",
+    "[role='button']",
+    "input[type='button']",
+    "input[type='image']",
+    "a[href]",
+  ].join(", ");
 
   let enabled = true;
   let pending = false;
@@ -70,15 +88,17 @@
       { [SETTING_KEY]: null, [LEGACY_SETTING_KEY]: true },
       (result) => {
         if (chrome.runtime.lastError) return;
-        enabled = result[SETTING_KEY] == null
-          ? result[LEGACY_SETTING_KEY] !== false
-          : result[SETTING_KEY] !== false;
+        enabled =
+          result[SETTING_KEY] == null
+            ? result[LEGACY_SETTING_KEY] !== false
+            : result[SETTING_KEY] !== false;
       }
     );
   }
 
   function handleClick(event) {
     if (!enabled || event.button !== 0 || pending) return;
+
     const control = findFullscreenControl(event.composedPath());
     if (!control) return;
 
@@ -110,6 +130,7 @@
     }
 
     if (String(event.key).toLowerCase() !== "f") return;
+
     const target = findBestPlayer();
     if (!target) return;
 
@@ -127,6 +148,7 @@
 
   function handleFullscreenChange() {
     if (!enabled || activeSessionId || pending || fallbackInProgress) return;
+
     const fullscreenElement =
       document.fullscreenElement || document.webkitFullscreenElement;
     if (!(fullscreenElement instanceof Element)) return;
@@ -138,7 +160,9 @@
     setPlayerTarget(target);
 
     const exit = document.exitFullscreen || document.webkitExitFullscreen;
-    Promise.resolve(typeof exit === "function" ? exit.call(document) : undefined)
+    Promise.resolve(
+      typeof exit === "function" ? exit.call(document) : undefined
+    )
       .catch(() => {})
       .then(() => waitForNativeFullscreenExit())
       .then(() => requestEnter("fullscreenchange-fallback"))
@@ -150,41 +174,71 @@
   function findFullscreenControl(path) {
     for (const item of path) {
       if (!(item instanceof Element)) continue;
-      const text = [
-        item.id,
-        item.className,
+
+      if (item.matches(KNOWN_FULLSCREEN_CONTROL_SELECTOR)) {
+        return item;
+      }
+
+      if (!item.matches(INTERACTIVE_SELECTOR)) continue;
+
+      const labels = [
         item.getAttribute("aria-label"),
         item.getAttribute("title"),
         item.getAttribute("data-title-no-tooltip"),
         item.getAttribute("data-tooltip-text"),
+        item.getAttribute("data-tooltip"),
       ]
         .filter((value) => typeof value === "string")
-        .join(" ")
-        .toLowerCase();
+        .map(normalizeLabel)
+        .filter(Boolean);
 
-      if (
-        item.matches(".ytp-fullscreen-button, [data-plyr='fullscreen']") ||
-        /(?:^|[\s_-])(fullscreen|full-screen|full screen)(?:$|[\s_-])/.test(text)
-      ) {
-        return item;
-      }
+      if (labels.some(isFullscreenLabel)) return item;
     }
+
     return null;
   }
 
+  function normalizeLabel(value) {
+    return String(value)
+      .toLowerCase()
+      .replace(/[_-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  }
+
+  function isFullscreenLabel(value) {
+    return /^(?:enter |exit |toggle )?full ?screen(?: mode)?$/.test(value);
+  }
+
   function findPlayerForControl(control) {
-    let current = control;
+    const youtube = control.closest("#movie_player.html5-video-player");
+    if (youtube && hasVisibleVideo(youtube)) return youtube;
+
+    const known = control.closest(
+      ".html5-video-player, .video-js, .jwplayer, .plyr, " +
+        "[data-shaka-player-container], [data-video-player], " +
+        "[class*='video-player'], [class*='media-player']"
+    );
+    if (known && hasVisibleVideo(known)) return known;
+
+    let current = control.parentElement;
     for (let depth = 0; current && depth < 9; depth += 1) {
       if (current.querySelector?.("video")) {
         const rect = current.getBoundingClientRect();
         const area = rect.width * rect.height;
-        const viewport = innerWidth * innerHeight;
-        if (rect.width >= 160 && rect.height >= 90 && area <= viewport * 1.4) {
+        const viewport = Math.max(1, innerWidth * innerHeight);
+
+        if (
+          rect.width >= 160 &&
+          rect.height >= 90 &&
+          area <= viewport * 1.4
+        ) {
           return current;
         }
       }
       current = current.parentElement;
     }
+
     return null;
   }
 
@@ -193,13 +247,14 @@
     if (element.matches("video")) return findPlayerContainer(element);
 
     const video = bestVideoInside(element);
-    if (video) {
-      const known = element.matches(
-        "#movie_player, .html5-video-player, .video-js, .jwplayer, .plyr, [data-shaka-player-container]"
-      );
-      return known ? element : findPlayerContainer(video, element);
-    }
-    return null;
+    if (!video) return null;
+
+    const known = element.matches(
+      "#movie_player, .html5-video-player, .video-js, .jwplayer, .plyr, " +
+        "[data-shaka-player-container]"
+    );
+
+    return known ? element : findPlayerContainer(video, element);
   }
 
   function findBestPlayer() {
@@ -208,6 +263,7 @@
 
     const videos = [...document.querySelectorAll("video")].filter(isVisibleVideo);
     if (!videos.length) return null;
+
     videos.sort((a, b) => videoScore(b) - videoScore(a));
     return findPlayerContainer(videos[0]);
   }
@@ -216,6 +272,7 @@
     const viewportArea = Math.max(1, innerWidth * innerHeight);
     const videoRect = video.getBoundingClientRect();
     const videoArea = Math.max(1, videoRect.width * videoRect.height);
+
     let best = video;
     let current = video.parentElement;
 
@@ -226,7 +283,8 @@
       const rect = current.getBoundingClientRect();
       const area = Math.max(0, rect.width * rect.height);
       const identity = `${current.id || ""} ${String(current.className || "")}`;
-      const hinted = /player|video|media|fullscreen|html5|vjs|jw|plyr|shaka/i.test(identity);
+      const hinted =
+        /player|video|media|fullscreen|html5|vjs|jw|plyr|shaka/i.test(identity);
       const wraps =
         area >= videoArea * 0.9 &&
         area <= videoArea * 4 &&
@@ -234,6 +292,7 @@
 
       if (wraps || (hinted && area <= viewportArea * 1.25)) best = current;
       if (boundary && current === boundary) break;
+
       current = current.parentElement;
     }
 
@@ -243,6 +302,7 @@
   function bestVideoInside(element) {
     const videos = [...element.querySelectorAll("video")].filter(isVisibleVideo);
     if (!videos.length) return null;
+
     videos.sort((a, b) => videoScore(b) - videoScore(a));
     return videos[0];
   }
@@ -263,15 +323,21 @@
   }
 
   function isEditable(path) {
-    return path.some((item) =>
-      item instanceof Element &&
-      Boolean(item.closest("input, textarea, select, [contenteditable='true'], [role='textbox']"))
+    return path.some(
+      (item) =>
+        item instanceof Element &&
+        Boolean(
+          item.closest(
+            "input, textarea, select, [contenteditable='true'], [role='textbox']"
+          )
+        )
     );
   }
 
   function setPlayerTarget(target) {
     clearMarks();
     if (!(target instanceof Element)) return;
+
     playerTarget = target;
     target.setAttribute(TARGET, "");
 
@@ -284,17 +350,26 @@
   }
 
   function clearMarks() {
-    if (playerTarget instanceof Element) playerTarget.removeAttribute(TARGET);
-    for (const element of markedPath) element.removeAttribute(PATH);
+    if (playerTarget instanceof Element) {
+      playerTarget.removeAttribute(TARGET);
+    }
+
+    for (const element of markedPath) {
+      element.removeAttribute(PATH);
+    }
+
     markedPath = [];
   }
 
   async function requestEnter(reason) {
     if (!enabled || pending || activeSessionId || !playerTarget) return;
+
     pending = true;
     try {
       const response = await sendMessage({ type: ENTER, reason });
-      if (!response?.ok) throw new Error(response?.error || "Fullscreen transfer failed");
+      if (!response?.ok) {
+        throw new Error(response?.error || "Fullscreen transfer failed");
+      }
       if (response.sessionId) activate(String(response.sessionId));
     } catch (error) {
       console.error("[helium-tweaks] video fullscreen entry failed:", error);
@@ -307,9 +382,14 @@
 
   async function requestExit(reason) {
     if (pending || !activeSessionId) return;
+
     pending = true;
     try {
-      await sendMessage({ type: EXIT, sessionId: activeSessionId, reason });
+      await sendMessage({
+        type: EXIT,
+        sessionId: activeSessionId,
+        reason,
+      });
     } catch (error) {
       console.error("[helium-tweaks] video fullscreen exit failed:", error);
     } finally {
@@ -319,10 +399,12 @@
 
   function activate(sessionId) {
     if (!sessionId) return;
+
     if (!(playerTarget instanceof Element) || !playerTarget.isConnected) {
       playerTarget = findBestPlayer();
       if (playerTarget) setPlayerTarget(playerTarget);
     }
+
     if (!playerTarget) return;
 
     activeSessionId = sessionId;
@@ -342,10 +424,12 @@
 
   function ensureStyle() {
     if (document.getElementById(STYLE_ID)) return;
+
     const style = document.createElement("style");
     style.id = STYLE_ID;
     style.textContent = `
-      html[${ROOT}], html[${ROOT}] body {
+      html[${ROOT}],
+      html[${ROOT}] body {
         width: 100% !important;
         height: 100% !important;
         margin: 0 !important;
@@ -366,7 +450,6 @@
         position: fixed !important;
         z-index: 2147483647 !important;
         inset: 0 !important;
-        display: block !important;
         width: 100vw !important;
         height: 100vh !important;
         min-width: 100vw !important;
@@ -382,31 +465,69 @@
         transform: none !important;
       }
 
-      html[${ROOT}] [${TARGET}] video,
-      html[${ROOT}] video[${TARGET}] {
+      html[${ROOT}] [${TARGET}] > video,
+      html[${ROOT}] [${TARGET}] video:not([${TARGET}]) {
+        position: absolute !important;
+        inset: 0 !important;
         width: 100% !important;
         height: 100% !important;
+        max-width: none !important;
+        max-height: none !important;
+        margin: 0 !important;
+        object-fit: contain !important;
+        background: #000 !important;
+        transform: none !important;
+      }
+
+      html[${ROOT}] video[${TARGET}] {
+        width: 100vw !important;
+        height: 100vh !important;
         max-width: none !important;
         max-height: none !important;
         object-fit: contain !important;
         background: #000 !important;
       }
 
+      html[${ROOT}] #movie_player[${TARGET}] .html5-video-container {
+        position: absolute !important;
+        inset: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+      }
+
+      html[${ROOT}] #movie_player[${TARGET}] video.html5-main-video {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100% !important;
+        height: 100% !important;
+        max-width: none !important;
+        max-height: none !important;
+        margin: 0 !important;
+        object-fit: contain !important;
+        transform: none !important;
+      }
+
       html[${ROOT}] iframe[${TARGET}] {
         border: 0 !important;
       }
     `;
+
     (document.head || document.documentElement).appendChild(style);
   }
 
   async function waitForNativeFullscreenExit() {
     const deadline = Date.now() + 1800;
+
     while (Date.now() < deadline) {
-      const current = document.fullscreenElement || document.webkitFullscreenElement;
+      const current =
+        document.fullscreenElement || document.webkitFullscreenElement;
+
       if (!current) {
         await new Promise((resolve) => setTimeout(resolve, 220));
         return;
       }
+
       await new Promise((resolve) => setTimeout(resolve, 40));
     }
   }
