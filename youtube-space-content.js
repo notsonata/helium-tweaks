@@ -207,6 +207,16 @@
     activeSessionId = "";
     requestPending = false;
     activationAt = 0;
+
+    const fullscreenElement = getFullscreenElement();
+    if (fullscreenElement) {
+      const exitFullscreen =
+        document.exitFullscreen || document.webkitExitFullscreen;
+      if (typeof exitFullscreen === "function") {
+        Promise.resolve(exitFullscreen.call(document)).catch(() => {});
+      }
+    }
+
     document.documentElement.removeAttribute(ROOT_ATTRIBUTE);
     clearTargetMarks();
     fullscreenTarget = null;
@@ -310,6 +320,7 @@
         overflow: hidden !important;
         background: #000 !important;
         transform: none !important;
+        object-fit: contain !important;
       }
 
       html[${ROOT_ATTRIBUTE}] [${TARGET_ATTRIBUTE}] video {
