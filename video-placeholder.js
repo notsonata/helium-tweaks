@@ -29,7 +29,7 @@ async function restoreVideo() {
   pending = true;
   button.classList.add("pending");
   title.textContent = "Restoring video…";
-  copy.textContent = "Returning the YouTube tab to this window.";
+  copy.textContent = "Returning the video tab to this window.";
 
   try {
     const response = await sendMessage({

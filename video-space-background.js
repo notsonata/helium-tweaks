@@ -1,11 +1,9 @@
 /*
-  Separate macOS Space controller for fullscreen web video.
+  PR #17-style separate-Space video fullscreen.
 
-  The page reports a real fullscreen media element. Before moving the tab, the
-  controller asks the page to leave document fullscreen while retaining its
-  captured player target. This returns the original Helium window to its normal
-  Space. The same tab is then moved into a temporary window, the captured player
-  is expanded by the content controller, and the new window enters fullscreen.
+  The same tab is moved into a temporary normal Helium window, the page isolates
+  its detected player, and that window is switched to browser fullscreen. A
+  placeholder remains at the tab's original position and restores the same tab.
 */
 
 (() => {
@@ -13,18 +11,16 @@
 
   const SETTING_KEY = "videoSeparateSpaceEnabled";
   const LEGACY_SETTING_KEY = "youtubeSeparateSpaceEnabled";
-  const SESSION_STORAGE_KEY = "heliumYoutubeSpaceSessions:v1";
+  const STORAGE_KEY = "heliumVideoSpaceSessions:v2";
+  const LEGACY_STORAGE_KEY = "heliumYoutubeSpaceSessions:v1";
 
-  const ENTER_MESSAGE = "heliumYoutubeSpaceEnter";
-  const EXIT_MESSAGE = "heliumYoutubeSpaceExit";
-  const STATUS_MESSAGE = "heliumYoutubeSpaceStatus";
-  const PREPARE_MESSAGE = "heliumVideoSpacePrepareTransfer";
-  const ACTIVATE_MESSAGE = "heliumYoutubeSpaceActivate";
-  const DEACTIVATE_MESSAGE = "heliumYoutubeSpaceDeactivate";
-
-  const PLACEHOLDER_PAGE = "video-placeholder.html";
-  const FULLSCREEN_GRACE_MS = 1800;
-  const WINDOW_NORMALIZE_TIMEOUT_MS = 5000;
+  const ENTER = "heliumYoutubeSpaceEnter";
+  const EXIT = "heliumYoutubeSpaceExit";
+  const STATUS = "heliumYoutubeSpaceStatus";
+  const ACTIVATE = "heliumYoutubeSpaceActivate";
+  const DEACTIVATE = "heliumYoutubeSpaceDeactivate";
+  const PLACEHOLDER = "video-placeholder.html";
+  const EXIT_ARM_MS = 1800;
 
   const sessions = new Map();
   const boundsTimers = new Map();
@@ -35,23 +31,23 @@
     if (sender.id && sender.id !== chrome.runtime.id) return false;
     if (sender.frameId && sender.frameId !== 0) return false;
 
-    if (message.type === ENTER_MESSAGE) {
-      beginSession(sender.tab, message.reason)
+    if (message.type === ENTER) {
+      enter(sender.tab, message.reason)
         .then((result) => sendResponse({ ok: true, ...result }))
         .catch((error) => sendResponse({ ok: false, error: publicError(error) }));
       return true;
     }
 
-    if (message.type === EXIT_MESSAGE) {
-      restoreMatchingSession(message, sender)
+    if (message.type === EXIT) {
+      restoreMatching(message, sender)
         .then((restored) => sendResponse({ ok: true, restored }))
         .catch((error) => sendResponse({ ok: false, error: publicError(error) }));
       return true;
     }
 
-    if (message.type === STATUS_MESSAGE) {
-      getPublicStatus(message.sessionId)
-        .then((status) => sendResponse({ ok: true, ...status }))
+    if (message.type === STATUS) {
+      status(message.sessionId)
+        .then((result) => sendResponse({ ok: true, ...result }))
         .catch((error) => sendResponse({ ok: false, error: publicError(error) }));
       return true;
     }
@@ -60,8 +56,18 @@
   });
 
   chrome.windows.onBoundsChanged.addListener((window) => {
-    if (typeof window?.id !== "number") return;
-    scheduleWindowStateCheck(window.id);
+    const session = findByFullscreenWindow(window?.id);
+    if (!session || session.phase !== "active") return;
+    if (Date.now() < session.exitArmedAt) return;
+
+    clearTimeout(boundsTimers.get(window.id));
+    boundsTimers.set(
+      window.id,
+      setTimeout(() => {
+        boundsTimers.delete(window.id);
+        checkWindowExit(window.id).catch(() => {});
+      }, 240)
+    );
   });
 
   chrome.windows.onRemoved.addListener((windowId) => {
@@ -85,209 +91,128 @@
     const disabled = current
       ? current.newValue === false
       : legacy.newValue === false;
-
-    if (disabled) {
-      restoreAllSessions("setting-disabled").catch((error) => {
-        console.error("[helium-tweaks] could not exit active video session:", error);
-      });
-    }
+    if (disabled) restoreAll("setting-disabled").catch(() => {});
   });
 
-  ensureLoaded().then(reconcileSessions).catch((error) => {
+  ensureLoaded().then(reconcile).catch((error) => {
     console.error("[helium-tweaks] fullscreen session recovery failed:", error);
   });
 
-  async function beginSession(senderTab, reason) {
+  async function enter(senderTab, reason) {
     await ensureLoaded();
-
-    if (!(await settingEnabled())) {
-      throw new Error("Separate-Space video fullscreen is disabled");
-    }
+    if (!(await enabled())) throw new Error("Fullscreen video Spaces are disabled");
     if (!senderTab || typeof senderTab.id !== "number") {
-      throw new Error("The fullscreen video tab is unavailable");
+      throw new Error("The video tab is unavailable");
     }
 
-    const existing = findSessionByVideoTab(senderTab.id);
+    const existing = findByVideoTab(senderTab.id);
     if (existing) return { sessionId: existing.id, reused: true };
 
     const tab = await chrome.tabs.get(senderTab.id);
-    if (tab.incognito) {
-      throw new Error("Separate-Space fullscreen is not available in Incognito");
-    }
+    if (tab.incognito) throw new Error("Unavailable in Incognito");
     if (typeof tab.windowId !== "number" || typeof tab.index !== "number") {
       throw new Error("The video tab position is unavailable");
     }
 
     const originalWindow = await chrome.windows.get(tab.windowId);
     if (originalWindow.type !== "normal") {
-      throw new Error("The video tab must be in a normal browser window");
+      throw new Error("The video tab must be in a normal Helium window");
+    }
+    if (originalWindow.state === "fullscreen") {
+      throw new Error("The page is still in native fullscreen");
     }
 
-    const sessionId = makeSessionId();
-    let placeholderTab = null;
-    let fullscreenWindow = null;
+    const id = makeId();
+    let placeholder = null;
+    let videoWindow = null;
 
     try {
-      /* A website's Fullscreen API makes the current Helium window report
-         state=fullscreen. That is expected here, not an error. Exit document
-         fullscreen first while the content controller retains the exact player
-         target, then wait for the original window to return to its normal Space. */
-      if (originalWindow.state === "fullscreen") {
-        await prepareTabForTransfer(tab.id);
-        await normalizeWindowForTransfer(tab.windowId);
-      }
-
-      placeholderTab = await chrome.tabs.create({
+      placeholder = await chrome.tabs.create({
         windowId: tab.windowId,
         index: tab.index,
-        active: false,
+        active: true,
         url: chrome.runtime.getURL(
-          `${PLACEHOLDER_PAGE}?session=${encodeURIComponent(sessionId)}`
+          `${PLACEHOLDER}?session=${encodeURIComponent(id)}`
         ),
       });
 
-      fullscreenWindow = await chrome.windows.create({
+      videoWindow = await chrome.windows.create({
         tabId: tab.id,
         type: "normal",
         focused: true,
       });
-
-      if (typeof fullscreenWindow?.id !== "number") {
-        throw new Error("Helium did not create the fullscreen video window");
+      if (typeof videoWindow?.id !== "number") {
+        throw new Error("Helium did not create the video window");
       }
 
-      /* Moving the active fullscreen tab should already normalize the source
-         window. Check once more before starting the new macOS fullscreen
-         transition so the two Spaces do not overlap or race each other. */
-      await normalizeWindowForTransfer(tab.windowId);
-
       const session = {
-        id: sessionId,
+        id,
         videoTabId: tab.id,
         originalWindowId: tab.windowId,
         originalIndex: tab.index,
         originalPinned: Boolean(tab.pinned),
         placeholderTabId:
-          typeof placeholderTab?.id === "number" ? placeholderTab.id : null,
-        fullscreenWindowId: fullscreenWindow.id,
+          typeof placeholder?.id === "number" ? placeholder.id : null,
+        fullscreenWindowId: videoWindow.id,
         phase: "entering",
-        seenFullscreen: false,
         createdAt: Date.now(),
         enteredAt: 0,
-        reason: String(reason || "document-fullscreen").slice(0, 80),
+        exitArmedAt: 0,
+        reason: String(reason || "video-fullscreen").slice(0, 80),
       };
 
-      sessions.set(sessionId, session);
-      await persistSessions();
+      sessions.set(id, session);
+      await persist();
 
-      await sendToVideoTab(session.videoTabId, {
-        type: ACTIVATE_MESSAGE,
-        sessionId,
-      });
-
-      const updatedWindow = await chrome.windows.update(fullscreenWindow.id, {
+      await sendToVideoTab(tab.id, { type: ACTIVATE, sessionId: id });
+      await chrome.windows.update(videoWindow.id, {
         state: "fullscreen",
         focused: true,
       });
 
       session.phase = "active";
-      session.seenFullscreen = updatedWindow?.state === "fullscreen";
       session.enteredAt = Date.now();
-      await persistSessions();
-
-      return { sessionId };
+      session.exitArmedAt = session.enteredAt + EXIT_ARM_MS;
+      await persist();
+      return { sessionId: id };
     } catch (error) {
-      const createdSession = sessions.get(sessionId);
-      if (createdSession) {
-        await restoreSession(sessionId, "entry-failed").catch(() => {});
+      if (sessions.has(id)) {
+        await restore(id, "entry-failed").catch(() => {});
       } else {
-        await safeRemoveTab(placeholderTab?.id);
-
-        if (typeof fullscreenWindow?.id === "number") {
-          await safeNormalizeWindow(fullscreenWindow.id);
-          try {
-            await chrome.tabs.move(tab.id, {
-              windowId: tab.windowId,
-              index: tab.index,
-            });
-            await chrome.tabs.update(tab.id, {
-              active: true,
-              pinned: tab.pinned,
-            });
-            await chrome.windows.update(tab.windowId, { focused: true });
-          } catch {
-            /* Preserve the original failure; rollback is best effort. */
-          }
+        await safeRemoveTab(placeholder?.id);
+        if (typeof videoWindow?.id === "number") {
+          await safeNormalizeWindow(videoWindow.id);
+          await moveBack(tab).catch(() => {});
         }
       }
       throw error;
     }
   }
 
-  async function prepareTabForTransfer(tabId) {
-    try {
-      const response = await chrome.tabs.sendMessage(tabId, {
-        type: PREPARE_MESSAGE,
-      });
-      if (response?.ok === false) {
-        throw new Error(response.error || "The page could not leave fullscreen");
-      }
-    } catch (error) {
-      throw new Error(
-        `Could not prepare the fullscreen video tab: ${error?.message || error}`
-      );
-    }
-  }
-
-  async function normalizeWindowForTransfer(windowId) {
-    const initial = await safeGetWindow(windowId);
-    if (!initial || initial.state !== "fullscreen") return;
-
-    try {
-      await chrome.windows.update(windowId, { state: "normal" });
-    } catch {
-      /* document.exitFullscreen may already be completing the transition */
-    }
-
-    const deadline = Date.now() + WINDOW_NORMALIZE_TIMEOUT_MS;
-    while (Date.now() < deadline) {
-      const current = await safeGetWindow(windowId);
-      if (!current || current.state !== "fullscreen") return;
-      await delay(80);
-    }
-
-    throw new Error("Helium could not return the original window from fullscreen");
-  }
-
-  async function restoreMatchingSession(message, sender) {
+  async function restoreMatching(message, sender) {
     await ensureLoaded();
-
     const requestedId = String(message.sessionId || "");
     let session = requestedId ? sessions.get(requestedId) : null;
-
     if (!session && typeof sender?.tab?.id === "number") {
       session =
-        findSessionByVideoTab(sender.tab.id) ||
-        findSessionByPlaceholderTab(sender.tab.id);
+        findByVideoTab(sender.tab.id) || findByPlaceholderTab(sender.tab.id);
     }
-
     if (!session) return false;
-    await restoreSession(session.id, String(message.reason || "requested"));
+    await restore(session.id, String(message.reason || "requested"));
     return true;
   }
 
-  async function restoreSession(sessionId, reason) {
+  async function restore(id, reason) {
     await ensureLoaded();
-    const session = sessions.get(String(sessionId));
-    if (!session) return false;
-    if (session.phase === "restoring") return true;
+    const session = sessions.get(String(id));
+    if (!session || session.phase === "restoring") return Boolean(session);
 
     session.phase = "restoring";
     session.restoreReason = String(reason || "requested").slice(0, 80);
-    await persistSessions();
+    await persist();
 
     await sendToVideoTab(session.videoTabId, {
-      type: DEACTIVATE_MESSAGE,
+      type: DEACTIVATE,
       sessionId: session.id,
     }).catch(() => {});
 
@@ -295,13 +220,13 @@
     if (!videoTab) {
       await safeRemoveTab(session.placeholderTabId);
       sessions.delete(session.id);
-      await persistSessions();
+      await persist();
       return true;
     }
 
     await safeNormalizeWindow(session.fullscreenWindowId);
-
     const originalWindow = await safeGetWindow(session.originalWindowId);
+
     if (originalWindow) {
       try {
         await chrome.tabs.move(session.videoTabId, {
@@ -316,121 +241,80 @@
         await chrome.windows.update(session.originalWindowId, { focused: true });
       } catch (error) {
         session.phase = "active";
-        await persistSessions();
+        await persist();
         throw error;
       }
     } else {
       await safeRemoveTab(session.placeholderTabId);
-      if (typeof videoTab.windowId === "number") {
-        await safeNormalizeWindow(videoTab.windowId);
-        try {
-          await chrome.tabs.update(session.videoTabId, { active: true });
-          await chrome.windows.update(videoTab.windowId, { focused: true });
-        } catch {
-          /* The user may have closed the video window during restoration. */
-        }
-      }
+      await chrome.tabs.update(session.videoTabId, { active: true }).catch(() => {});
+      await chrome.windows.update(videoTab.windowId, { focused: true }).catch(() => {});
     }
 
-    await sendToVideoTab(session.videoTabId, {
-      type: DEACTIVATE_MESSAGE,
-      sessionId: session.id,
-    }).catch(() => {});
-
     sessions.delete(session.id);
-    await persistSessions();
+    await persist();
     return true;
   }
 
-  async function restoreAllSessions(reason) {
-    await ensureLoaded();
-    for (const id of [...sessions.keys()]) {
-      await restoreSession(id, reason).catch((error) => {
-        console.error(`[helium-tweaks] could not restore video session ${id}:`, error);
-      });
-    }
-  }
-
-  function scheduleWindowStateCheck(windowId) {
-    clearTimeout(boundsTimers.get(windowId));
-    boundsTimers.set(
-      windowId,
-      setTimeout(() => {
-        boundsTimers.delete(windowId);
-        checkWindowState(windowId).catch(() => {});
-      }, 180)
-    );
-  }
-
-  async function checkWindowState(windowId) {
-    await ensureLoaded();
-    const session = findSessionByFullscreenWindow(windowId);
+  async function checkWindowExit(windowId) {
+    const session = findByFullscreenWindow(windowId);
     if (!session || session.phase !== "active") return;
+    if (Date.now() < session.exitArmedAt) return;
 
     const window = await safeGetWindow(windowId);
-    if (!window) return;
+    if (!window || window.state === "fullscreen") return;
 
-    if (window.state === "fullscreen") {
-      if (!session.seenFullscreen) {
-        session.seenFullscreen = true;
-        await persistSessions();
-      }
-      return;
-    }
-
-    const oldEnough = Date.now() - session.enteredAt >= FULLSCREEN_GRACE_MS;
-    if (session.seenFullscreen || oldEnough) {
-      await restoreSession(session.id, "window-left-fullscreen");
+    await delay(280);
+    const confirmed = await safeGetWindow(windowId);
+    if (confirmed && confirmed.state !== "fullscreen") {
+      await restore(session.id, "window-left-fullscreen");
     }
   }
 
   async function handleWindowRemoved(windowId) {
-    await ensureLoaded();
     clearTimeout(boundsTimers.get(windowId));
     boundsTimers.delete(windowId);
+    await ensureLoaded();
 
-    const fullscreenSession = findSessionByFullscreenWindow(windowId);
-    if (fullscreenSession && fullscreenSession.phase !== "restoring") {
-      await safeRemoveTab(fullscreenSession.placeholderTabId);
-      sessions.delete(fullscreenSession.id);
-      await persistSessions();
+    const session = findByFullscreenWindow(windowId);
+    if (session && session.phase !== "restoring") {
+      await safeRemoveTab(session.placeholderTabId);
+      sessions.delete(session.id);
+      await persist();
       return;
     }
 
     let changed = false;
-    for (const session of sessions.values()) {
-      if (session.originalWindowId === windowId) {
-        session.originalWindowId = null;
+    for (const item of sessions.values()) {
+      if (item.originalWindowId === windowId) {
+        item.originalWindowId = null;
         changed = true;
       }
     }
-    if (changed) await persistSessions();
+    if (changed) await persist();
   }
 
   async function handleTabRemoved(tabId) {
     await ensureLoaded();
-
-    const videoSession = findSessionByVideoTab(tabId);
-    if (videoSession && videoSession.phase !== "restoring") {
-      await safeRemoveTab(videoSession.placeholderTabId);
-      sessions.delete(videoSession.id);
-      await persistSessions();
+    const video = findByVideoTab(tabId);
+    if (video && video.phase !== "restoring") {
+      await safeRemoveTab(video.placeholderTabId);
+      sessions.delete(video.id);
+      await persist();
       return;
     }
 
-    const placeholderSession = findSessionByPlaceholderTab(tabId);
-    if (placeholderSession) {
-      placeholderSession.placeholderTabId = null;
-      await persistSessions();
+    const placeholder = findByPlaceholderTab(tabId);
+    if (placeholder) {
+      placeholder.placeholderTabId = null;
+      await persist();
     }
   }
 
-  async function getPublicStatus(requestedId) {
+  async function status(requestedId) {
     await ensureLoaded();
     const session = requestedId
       ? sessions.get(String(requestedId))
       : [...sessions.values()][0];
-
     if (!session) return { active: false, count: 0 };
     return {
       active: true,
@@ -440,85 +324,78 @@
     };
   }
 
-  async function reconcileSessions() {
+  async function restoreAll(reason) {
     await ensureLoaded();
+    for (const id of [...sessions.keys()]) {
+      await restore(id, reason).catch(() => {});
+    }
+  }
 
+  async function reconcile() {
+    await ensureLoaded();
     for (const session of [...sessions.values()]) {
       const tab = await safeGetTab(session.videoTabId);
       const window = await safeGetWindow(session.fullscreenWindowId);
-
       if (!tab || !window) {
         await safeRemoveTab(session.placeholderTabId);
         sessions.delete(session.id);
         continue;
       }
-
       if (session.phase === "restoring") session.phase = "active";
-
-      if (session.phase === "active" && window.state !== "fullscreen") {
-        await restoreSession(session.id, "service-worker-recovery").catch(() => {});
-      }
+      if (!session.exitArmedAt) session.exitArmedAt = Date.now() + EXIT_ARM_MS;
     }
-
-    await persistSessions();
+    await persist();
   }
 
   async function ensureLoaded() {
     if (loadPromise) return loadPromise;
-
     loadPromise = (async () => {
       if (!chrome.storage.session) return;
-      const result = await chrome.storage.session.get(SESSION_STORAGE_KEY);
-      const stored = result[SESSION_STORAGE_KEY];
+      const result = await chrome.storage.session.get([STORAGE_KEY, LEGACY_STORAGE_KEY]);
+      const stored = Array.isArray(result[STORAGE_KEY])
+        ? result[STORAGE_KEY]
+        : result[LEGACY_STORAGE_KEY];
       if (!Array.isArray(stored)) return;
-
       for (const item of stored) {
-        if (!item || !item.id || typeof item.videoTabId !== "number") continue;
+        if (!item?.id || typeof item.videoTabId !== "number") continue;
         sessions.set(String(item.id), item);
       }
     })();
-
     return loadPromise;
   }
 
-  async function persistSessions() {
+  async function persist() {
     if (!chrome.storage.session) return;
-    await chrome.storage.session.set({
-      [SESSION_STORAGE_KEY]: [...sessions.values()],
-    });
+    await chrome.storage.session.set({ [STORAGE_KEY]: [...sessions.values()] });
   }
 
-  async function settingEnabled() {
+  async function enabled() {
     const result = await chrome.storage.sync.get({
       [SETTING_KEY]: null,
       [LEGACY_SETTING_KEY]: true,
     });
-
     return result[SETTING_KEY] == null
       ? result[LEGACY_SETTING_KEY] !== false
       : result[SETTING_KEY] !== false;
   }
 
-  function findSessionByVideoTab(tabId) {
-    return [...sessions.values()].find((session) => session.videoTabId === tabId);
+  function findByVideoTab(tabId) {
+    return [...sessions.values()].find((item) => item.videoTabId === tabId);
   }
 
-  function findSessionByPlaceholderTab(tabId) {
-    return [...sessions.values()].find(
-      (session) => session.placeholderTabId === tabId
-    );
+  function findByPlaceholderTab(tabId) {
+    return [...sessions.values()].find((item) => item.placeholderTabId === tabId);
   }
 
-  function findSessionByFullscreenWindow(windowId) {
+  function findByFullscreenWindow(windowId) {
     return [...sessions.values()].find(
-      (session) => session.fullscreenWindowId === windowId
+      (item) => item.fullscreenWindowId === windowId
     );
   }
 
   async function sendToVideoTab(tabId, message) {
     let lastError = null;
-
-    for (let attempt = 0; attempt < 12; attempt += 1) {
+    for (let attempt = 0; attempt < 16; attempt += 1) {
       try {
         const response = await chrome.tabs.sendMessage(tabId, message);
         if (response?.ok !== false) return response;
@@ -527,8 +404,13 @@
       }
       await delay(50);
     }
+    throw lastError || new Error("The video page did not answer");
+  }
 
-    throw lastError || new Error("The fullscreen video page did not answer");
+  async function moveBack(tab) {
+    await chrome.tabs.move(tab.id, { windowId: tab.windowId, index: tab.index });
+    await chrome.tabs.update(tab.id, { active: true, pinned: tab.pinned });
+    await chrome.windows.update(tab.windowId, { focused: true });
   }
 
   async function safeGetTab(tabId) {
@@ -555,19 +437,10 @@
       const window = await chrome.windows.get(windowId);
       if (window.state === "fullscreen") {
         await chrome.windows.update(windowId, { state: "normal" });
-        await waitForWindowToLeaveFullscreen(windowId, 2500);
+        await delay(120);
       }
     } catch {
-      /* Window was already closed. */
-    }
-  }
-
-  async function waitForWindowToLeaveFullscreen(windowId, timeoutMs) {
-    const deadline = Date.now() + timeoutMs;
-    while (Date.now() < deadline) {
-      const current = await safeGetWindow(windowId);
-      if (!current || current.state !== "fullscreen") return;
-      await delay(80);
+      // Window already closed.
     }
   }
 
@@ -576,13 +449,12 @@
     try {
       await chrome.tabs.remove(tabId);
     } catch {
-      /* Tab was already closed. */
+      // Tab already closed.
     }
   }
 
-  function makeSessionId() {
-    if (crypto?.randomUUID) return crypto.randomUUID();
-    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  function makeId() {
+    return crypto?.randomUUID?.() || `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
   }
 
   function delay(ms) {
@@ -590,8 +462,7 @@
   }
 
   function publicError(error) {
-    const message = typeof error?.message === "string" ? error.message : "";
-    return (message || "Separate-Space fullscreen failed")
+    return String(error?.message || "Separate-Space fullscreen failed")
       .replace(/^Error:\s*/i, "")
       .slice(0, 240);
   }
