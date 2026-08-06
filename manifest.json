@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Helium Tweaks",
-  "version": "1.6.0",
-  "description": "Helium-specific bookmark tools and separate-Space YouTube fullscreen controls.",
+  "version": "1.7.0",
+  "description": "Helium-specific bookmark tools and separate-Space fullscreen video controls.",
   "permissions": ["bookmarks", "storage", "favicon"],
   "background": {
     "service_worker": "service-worker.js"
@@ -47,10 +47,7 @@
       "all_frames": false
     },
     {
-      "matches": [
-        "https://www.youtube.com/*",
-        "https://m.youtube.com/*"
-      ],
+      "matches": ["http://*/*", "https://*/*"],
       "js": ["youtube-space-content.js"],
       "run_at": "document_start",
       "all_frames": false
