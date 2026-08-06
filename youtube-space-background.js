@@ -129,7 +129,7 @@
       placeholderTab = await chrome.tabs.create({
         windowId: tab.windowId,
         index: tab.index,
-        active: true,
+        active: false,
         url: chrome.runtime.getURL(
           `${PLACEHOLDER_PAGE}?session=${encodeURIComponent(sessionId)}`
         ),
