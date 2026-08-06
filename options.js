@@ -6,7 +6,18 @@ const STATUS_MESSAGE = "heliumYoutubeSpaceStatus";
 const EXIT_MESSAGE = "heliumYoutubeSpaceExit";
 const COMMAND_NAME = "toggle-bookmarks-sidebar";
 
+const AUTO_PIP_DEFAULTS = {
+  autoPipEnabled: true,
+  autoPipExitOnReturn: true,
+  autoPipDelayMs: 500,
+  autoPipExcludedSites: [],
+};
+
 const toggle = document.getElementById("videoSeparateSpace");
+const autoPipEnabled = document.getElementById("autoPipEnabled");
+const autoPipExitOnReturn = document.getElementById("autoPipExitOnReturn");
+const autoPipDelayMs = document.getElementById("autoPipDelayMs");
+const autoPipExcludedSites = document.getElementById("autoPipExcludedSites");
 const saveStatus = document.getElementById("saveStatus");
 const videoStatus = document.getElementById("videoStatus");
 const exitVideo = document.getElementById("exitVideo");
@@ -26,7 +37,9 @@ async function initialize() {
   const settings = await chrome.storage.sync.get({
     [SETTING_KEY]: null,
     [LEGACY_SETTING_KEY]: true,
+    ...AUTO_PIP_DEFAULTS,
   });
+
   toggle.checked =
     settings[SETTING_KEY] == null
       ? settings[LEGACY_SETTING_KEY] !== false
@@ -35,6 +48,11 @@ async function initialize() {
   if (settings[SETTING_KEY] == null) {
     await chrome.storage.sync.set({ [SETTING_KEY]: toggle.checked });
   }
+
+  autoPipEnabled.checked = settings.autoPipEnabled !== false;
+  autoPipExitOnReturn.checked = settings.autoPipExitOnReturn !== false;
+  autoPipDelayMs.value = String(normalizeDelay(settings.autoPipDelayMs));
+  autoPipExcludedSites.value = normalizeSites(settings.autoPipExcludedSites).join(", ");
 
   const platform = await chrome.runtime.getPlatformInfo();
   if (platform.os === "mac") {
@@ -60,6 +78,32 @@ toggle.addEventListener("change", async () => {
   );
 });
 
+autoPipEnabled.addEventListener("change", async () => {
+  await chrome.storage.sync.set({ autoPipEnabled: autoPipEnabled.checked });
+  showSaved(autoPipEnabled.checked ? "Automatic PiP enabled" : "Automatic PiP disabled");
+});
+
+autoPipExitOnReturn.addEventListener("change", async () => {
+  await chrome.storage.sync.set({
+    autoPipExitOnReturn: autoPipExitOnReturn.checked,
+  });
+  showSaved("Automatic PiP settings saved");
+});
+
+autoPipDelayMs.addEventListener("change", async () => {
+  const value = normalizeDelay(autoPipDelayMs.value);
+  autoPipDelayMs.value = String(value);
+  await chrome.storage.sync.set({ autoPipDelayMs: value });
+  showSaved("Automatic PiP delay saved");
+});
+
+autoPipExcludedSites.addEventListener("change", async () => {
+  const sites = normalizeSites(autoPipExcludedSites.value);
+  autoPipExcludedSites.value = sites.join(", ");
+  await chrome.storage.sync.set({ autoPipExcludedSites: sites });
+  showSaved("Excluded sites saved");
+});
+
 document.getElementById("manageShortcuts").addEventListener("click", () => {
   chrome.tabs.create({ url: "chrome://extensions/shortcuts" });
 });
@@ -67,9 +111,7 @@ document.getElementById("manageShortcuts").addEventListener("click", () => {
 document.getElementById("openBookmarks").addEventListener("click", async () => {
   try {
     const response = await sendMessage({ type: "heliumOpenBookmarksSidebar" });
-    if (!response?.ok) {
-      throw new Error(response?.error || "Could not open bookmarks");
-    }
+    if (!response?.ok) throw new Error(response?.error || "Could not open bookmarks");
   } catch (error) {
     showSaved(error?.message || "Could not open bookmarks");
   }
@@ -112,6 +154,23 @@ async function refreshVideoStatus() {
     exitVideo.disabled = true;
     videoStatus.textContent = "Session status unavailable";
   }
+}
+
+function normalizeDelay(value) {
+  const number = Number(value);
+  return Number.isFinite(number)
+    ? Math.min(3000, Math.max(100, Math.round(number)))
+    : AUTO_PIP_DEFAULTS.autoPipDelayMs;
+}
+
+function normalizeSites(value) {
+  const entries = Array.isArray(value)
+    ? value
+    : String(value || "").split(/[\n,]+/);
+  return [...new Set(entries
+    .map((entry) => String(entry).trim().toLowerCase())
+    .map((entry) => entry.replace(/^https?:\/\//, "").split("/")[0])
+    .filter(Boolean))];
 }
 
 function showSaved(message) {

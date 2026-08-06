@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Helium Tweaks",
-  "version": "1.8.3",
-  "description": "Helium-specific bookmark tools and separate-Space fullscreen video controls.",
+  "version": "1.9.0",
+  "description": "Helium bookmark tools, separate-Space fullscreen video, and fullscreen-safe Auto PiP.",
   "permissions": ["bookmarks", "storage", "favicon"],
   "background": {
     "service_worker": "service-worker.js"
@@ -48,7 +48,7 @@
     },
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["video-space-content.js"],
+      "js": ["video-space-content.js", "auto-pip-content.js"],
       "run_at": "document_start",
       "all_frames": false
     }

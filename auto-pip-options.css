@@ -1,0 +1,74 @@
+.field-grid {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid #353b3c;
+}
+
+.checkbox-row,
+.field-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--muted);
+}
+
+.checkbox-row {
+  justify-content: flex-start;
+  cursor: pointer;
+}
+
+.checkbox-row input {
+  width: 15px;
+  height: 15px;
+  accent-color: #8b9294;
+}
+
+.number-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--dim);
+}
+
+.field-row input[type="number"],
+.field-row textarea {
+  border: 1px solid #495051;
+  border-radius: 7px;
+  color: var(--text);
+  background: #202425;
+  font: inherit;
+}
+
+.field-row input[type="number"] {
+  width: 92px;
+  min-height: 30px;
+  padding: 0 8px;
+}
+
+.field-row-stacked {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.field-row textarea {
+  width: 100%;
+  min-height: 64px;
+  padding: 8px 9px;
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.field-row small {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.field-row input:focus-visible,
+.field-row textarea:focus-visible {
+  outline: 2px solid #81898b;
+  outline-offset: 2px;
+}
