@@ -241,13 +241,37 @@
   function findPlayerContainer(video) {
     let candidate = video;
     let current = video.parentElement;
+    let depth = 0;
+    const videoRect = video.getBoundingClientRect();
+    const videoArea = Math.max(1, videoRect.width * videoRect.height);
     const viewportArea = Math.max(1, innerWidth * innerHeight);
 
-    while (current && current !== document.body && current !== document.documentElement) {
+    while (
+      current &&
+      current !== document.body &&
+      current !== document.documentElement &&
+      depth < 8
+    ) {
       const rect = current.getBoundingClientRect();
-      if (rect.width * rect.height > viewportArea * 0.35) candidate = current;
-      if (current.getAttribute("role") === "application") candidate = current;
+      const area = Math.max(0, rect.width * rect.height);
+      const identity = `${current.id || ""} ${current.className || ""}`;
+      const playerHint =
+        /(?:^|[\s_-])(player|video|media|fullscreen|html5|vjs|jw|plyr|shaka)(?:$|[\s_-])/i.test(
+          identity
+        ) || current.getAttribute("role") === "application";
+      const closelyWrapsVideo =
+        area >= videoArea * 0.9 &&
+        area <= videoArea * 3.5 &&
+        rect.width <= innerWidth * 1.1 &&
+        rect.height <= innerHeight * 1.1;
+
+      if (closelyWrapsVideo || (playerHint && area <= viewportArea * 1.1)) {
+        candidate = current;
+      }
+
+      if (area > viewportArea * 1.2 && !playerHint) break;
       current = current.parentElement;
+      depth += 1;
     }
 
     return candidate;
