@@ -5,123 +5,333 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Helium Tweaks settings</title>
     <link rel="stylesheet" href="options.css">
-    <link rel="stylesheet" href="auto-pip-options.css">
   </head>
   <body>
-    <main class="settings">
-      <header class="settings-header">
-        <div>
-          <p class="eyebrow">Helium Tweaks</p>
+    <div class="app-shell">
+      <aside class="settings-nav" aria-label="Settings sections">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">H</span>
+          <div>
+            <strong>Helium Tweaks</strong>
+            <span id="version">Settings</span>
+          </div>
+        </div>
+
+        <nav>
+          <a href="#bookmarks">Bookmarks</a>
+          <a href="#shortcuts">Shortcuts</a>
+          <a href="#pip">Picture-in-Picture</a>
+          <a href="#fullscreen-player">Fullscreen player</a>
+          <a href="#maintenance">Maintenance</a>
+        </nav>
+
+        <p class="nav-note">
+          The bookmarks panel stays visible on this page. Its global pin setting
+          is not changed by opening Settings.
+        </p>
+      </aside>
+
+      <main class="settings-main">
+        <header class="page-header">
+          <p class="eyebrow">Extension preferences</p>
           <h1>Settings</h1>
-        </div>
-        <span class="version" id="version"></span>
-      </header>
-
-      <section class="settings-card" aria-labelledby="video-heading">
-        <div class="setting-row">
-          <div class="setting-copy">
-            <h2 id="video-heading">Fullscreen video Space</h2>
-            <p>
-              Intercept video fullscreen controls, move the same tab into a
-              temporary fullscreen Helium window, and leave a restore page in
-              the original window. On macOS, the temporary window normally
-              receives its own Space.
-            </p>
-          </div>
-
-          <label class="switch">
-            <input id="videoSeparateSpace" type="checkbox">
-            <span class="switch-track" aria-hidden="true">
-              <span class="switch-thumb"></span>
-            </span>
-            <span class="sr-only">Enable separate-Space fullscreen video</span>
-          </label>
-        </div>
-
-        <div class="card-note" id="platformNote"></div>
-
-        <div class="card-actions">
-          <button class="button danger" id="exitVideo" type="button" disabled>
-            Exit active fullscreen video
-          </button>
-          <span class="status" id="videoStatus" role="status" aria-live="polite"></span>
-        </div>
-      </section>
-
-      <section class="settings-card" aria-labelledby="pip-heading">
-        <div class="setting-row">
-          <div class="setting-copy">
-            <h2 id="pip-heading">Automatic Picture-in-Picture</h2>
-            <p>
-              Enter PiP when you switch away from a tab with a playing video.
-              Fullscreen video transfers and restore-placeholder activations are
-              excluded automatically.
-            </p>
-          </div>
-
-          <label class="switch">
-            <input id="autoPipEnabled" type="checkbox">
-            <span class="switch-track" aria-hidden="true">
-              <span class="switch-thumb"></span>
-            </span>
-            <span class="sr-only">Enable automatic Picture-in-Picture</span>
-          </label>
-        </div>
-
-        <div class="field-grid">
-          <label class="checkbox-row">
-            <input id="autoPipExitOnReturn" type="checkbox">
-            <span>Exit PiP when returning to the video tab</span>
-          </label>
-
-          <label class="field-row">
-            <span>Tab-switch delay</span>
-            <span class="number-control">
-              <input id="autoPipDelayMs" type="number" min="100" max="3000" step="50">
-              <span>ms</span>
-            </span>
-          </label>
-
-          <label class="field-row field-row-stacked">
-            <span>Excluded sites</span>
-            <textarea id="autoPipExcludedSites" rows="3" placeholder="meet.google.com, teams.microsoft.com"></textarea>
-            <small>Comma-separated hostnames. Subdomains are included.</small>
-          </label>
-        </div>
-
-        <div class="card-note warning">
-          Disable the separate Better Auto PiP extension before enabling this.
-          Extensions cannot reliably cancel another extension's PiP request.
-        </div>
-      </section>
-
-      <section class="settings-card" aria-labelledby="bookmarks-heading">
-        <div class="setting-copy">
-          <h2 id="bookmarks-heading">Bookmarks sidebar</h2>
           <p>
-            The toolbar button opens this settings page. Use the keyboard
-            shortcut to open and focus the bookmark sidebar on the current tab.
+            Changes are saved immediately and synchronized through Chromium when
+            supported. The panel at the right is the real bookmark sidebar, not
+            a static preview.
           </p>
-        </div>
+        </header>
 
-        <div class="shortcut-row">
-          <span>Current shortcut</span>
-          <kbd id="bookmarkShortcut">Not assigned</kbd>
-        </div>
+        <section class="settings-section" id="bookmarks" aria-labelledby="bookmarks-heading">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Sidebar</p>
+              <h2 id="bookmarks-heading">Bookmarks</h2>
+              <p>Bookmarks are always enabled. These controls change the sidebar on every supported page.</p>
+            </div>
+            <span class="status-pill">Always available</span>
+          </div>
 
-        <div class="card-actions">
-          <button class="button" id="manageShortcuts" type="button">
-            Manage shortcuts
-          </button>
-          <button class="button" id="openBookmarks" type="button">
-            Open bookmarks page
-          </button>
-        </div>
-      </section>
+          <div class="settings-card">
+            <div class="setting-block">
+              <div class="setting-copy">
+                <label for="bookmarkSidebarWidth">Sidebar width</label>
+                <p>Adjust the complete bookmark panel, including the live panel on this page.</p>
+              </div>
+              <div class="range-control">
+                <input id="bookmarkSidebarWidth" type="range" min="180" max="420" step="5">
+                <output id="bookmarkSidebarWidthValue" for="bookmarkSidebarWidth"></output>
+              </div>
+            </div>
 
-      <p class="save-status" id="saveStatus" role="status" aria-live="polite"></p>
-    </main>
+            <div class="setting-block">
+              <div class="setting-copy">
+                <label for="bookmarkRowHeight">Row density</label>
+                <p>Controls bookmark and folder-row height.</p>
+              </div>
+              <select id="bookmarkRowHeight">
+                <option value="26">Compact</option>
+                <option value="30">Default</option>
+                <option value="34">Comfortable</option>
+                <option value="38">Large</option>
+              </select>
+            </div>
 
+            <div class="setting-block">
+              <div class="setting-copy">
+                <label for="bookmarkFontSize">Label size</label>
+                <p>Changes bookmark, folder, search, and empty-state text.</p>
+              </div>
+              <div class="range-control compact-range">
+                <input id="bookmarkFontSize" type="range" min="11" max="15" step="1">
+                <output id="bookmarkFontSizeValue" for="bookmarkFontSize"></output>
+              </div>
+            </div>
+
+            <div class="setting-block">
+              <div class="setting-copy">
+                <label for="bookmarkEdgeWidth">Reveal edge width</label>
+                <p>Width of the invisible trigger along the right side of webpages.</p>
+              </div>
+              <div class="range-control compact-range">
+                <input id="bookmarkEdgeWidth" type="range" min="3" max="18" step="1">
+                <output id="bookmarkEdgeWidthValue" for="bookmarkEdgeWidth"></output>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card compact-card">
+            <label class="toggle-row">
+              <span>
+                <strong>Pin by default</strong>
+                <small>Keep the sidebar open on ordinary webpages until manually unpinned.</small>
+              </span>
+              <span class="switch">
+                <input id="bookmarkPinned" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              </span>
+            </label>
+
+            <label class="toggle-row">
+              <span>
+                <strong>Folder counts</strong>
+                <small>Show the number badge beside each folder.</small>
+              </span>
+              <span class="switch">
+                <input id="bookmarkShowFolderCounts" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              </span>
+            </label>
+
+            <label class="toggle-row">
+              <span>
+                <strong>Row hover background</strong>
+                <small>Highlight bookmark rows while the pointer is over them.</small>
+              </span>
+              <span class="switch">
+                <input id="bookmarkRowHover" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              </span>
+            </label>
+
+            <div class="setting-block borderless">
+              <div class="setting-copy">
+                <label for="bookmarkScrollbarMode">Scrollbar</label>
+                <p>Keep Helium's thin overlay scrollbar or hide it completely.</p>
+              </div>
+              <select id="bookmarkScrollbarMode">
+                <option value="auto">Show when needed</option>
+                <option value="hidden">Hidden</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="card-actions">
+            <button class="button" id="resetCollapsedFolders" type="button">Expand all folders</button>
+            <button class="button" id="openStandaloneBookmarks" type="button">Open standalone bookmarks</button>
+          </div>
+        </section>
+
+        <section class="settings-section" id="shortcuts" aria-labelledby="shortcuts-heading">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Browser commands</p>
+              <h2 id="shortcuts-heading">Shortcuts</h2>
+              <p>Chromium owns extension key bindings, so assignments are changed in its shortcut manager.</p>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div class="shortcut-display">
+              <div>
+                <strong>Open bookmarks and focus search</strong>
+                <small>Command: <code>toggle-bookmarks-sidebar</code></small>
+              </div>
+              <kbd id="bookmarkShortcut">Not assigned</kbd>
+            </div>
+            <div class="card-actions inner-actions">
+              <button class="button primary" id="manageShortcuts" type="button">Manage shortcuts</button>
+              <button class="button" id="refreshShortcut" type="button">Refresh assignment</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-section" id="pip" aria-labelledby="pip-heading">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Background playback</p>
+              <h2 id="pip-heading">Automatic Picture-in-Picture</h2>
+              <p>Open PiP when leaving a playing-video tab without interfering with fullscreen transfers.</p>
+            </div>
+            <label class="switch large-switch">
+              <input id="autoPipEnabled" type="checkbox">
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              <span class="sr-only">Enable automatic Picture-in-Picture</span>
+            </label>
+          </div>
+
+          <div class="settings-card compact-card">
+            <label class="toggle-row">
+              <span>
+                <strong>Exit PiP on return</strong>
+                <small>Close PiP when the original video tab becomes active again.</small>
+              </span>
+              <span class="switch">
+                <input id="autoPipExitOnReturn" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              </span>
+            </label>
+
+            <div class="setting-block">
+              <div class="setting-copy">
+                <label for="autoPipDelayMs">Tab-switch delay</label>
+                <p>Wait before requesting PiP after leaving the video tab.</p>
+              </div>
+              <span class="number-control">
+                <input id="autoPipDelayMs" type="number" min="100" max="3000" step="50">
+                <span>ms</span>
+              </span>
+            </div>
+
+            <label class="textarea-row">
+              <span>
+                <strong>Excluded sites</strong>
+                <small>Comma-separated hostnames. Subdomains are included.</small>
+              </span>
+              <textarea id="autoPipExcludedSites" rows="3" placeholder="meet.google.com, teams.microsoft.com"></textarea>
+            </label>
+          </div>
+
+          <p class="section-note warning">
+            Disable the separate Better Auto PiP extension. One extension cannot reliably cancel another extension's independent PiP request.
+          </p>
+        </section>
+
+        <section class="settings-section" id="fullscreen-player" aria-labelledby="fullscreen-heading">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">macOS Spaces</p>
+              <h2 id="fullscreen-heading">Fullscreen player</h2>
+              <p>Move the same video tab into a temporary popup window and let macOS place that window in its own Space.</p>
+            </div>
+            <label class="switch large-switch">
+              <input id="videoSeparateSpace" type="checkbox">
+              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              <span class="sr-only">Enable fullscreen video Space</span>
+            </label>
+          </div>
+
+          <div class="settings-card compact-card">
+            <label class="toggle-row">
+              <span>
+                <strong>Fullscreen-button interception</strong>
+                <small>Route recognized player fullscreen buttons through Helium's separate-Space flow.</small>
+              </span>
+              <span class="switch">
+                <input id="videoSpaceControlClickEnabled" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              </span>
+            </label>
+
+            <label class="toggle-row">
+              <span>
+                <strong><kbd>F</kbd> enters or exits fullscreen</strong>
+                <small>Apply the separate-Space behavior to the common player shortcut.</small>
+              </span>
+              <span class="switch">
+                <input id="videoSpaceKeyboardEnabled" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              </span>
+            </label>
+
+            <label class="toggle-row">
+              <span>
+                <strong><kbd>Esc</kbd> restores the video tab</strong>
+                <small>Return the video to its original window and tab position.</small>
+              </span>
+              <span class="switch">
+                <input id="videoSpaceEscapeEnabled" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              </span>
+            </label>
+
+            <label class="toggle-row">
+              <span>
+                <strong>Unknown-player fallback</strong>
+                <small>Detect a site's native Fullscreen API request when its control could not be recognized.</small>
+              </span>
+              <span class="switch">
+                <input id="videoSpaceFallbackEnabled" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+              </span>
+            </label>
+
+            <label class="textarea-row">
+              <span>
+                <strong>Excluded sites</strong>
+                <small>Use each site's normal fullscreen behavior on these hostnames.</small>
+              </span>
+              <textarea id="videoSpaceExcludedSites" rows="3" placeholder="example.com, player.example.net"></textarea>
+            </label>
+          </div>
+
+          <div class="platform-line" id="platformNote"></div>
+          <div class="card-actions">
+            <button class="button danger" id="exitVideo" type="button" disabled>Exit active fullscreen video</button>
+            <span class="status" id="videoStatus" role="status" aria-live="polite"></span>
+          </div>
+        </section>
+
+        <section class="settings-section" id="maintenance" aria-labelledby="maintenance-heading">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">Recovery</p>
+              <h2 id="maintenance-heading">Maintenance</h2>
+              <p>Reset extension preferences without deleting browser bookmarks.</p>
+            </div>
+          </div>
+
+          <div class="settings-card danger-card">
+            <div>
+              <strong>Reset Helium Tweaks</strong>
+              <p>Restores default settings, unpins the sidebar, and expands all folders. Your bookmarks remain untouched.</p>
+            </div>
+            <button class="button danger" id="resetAllSettings" type="button">Reset all preferences</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <p class="save-status" id="saveStatus" role="status" aria-live="polite"></p>
+
+    <script src="sidebar-fixes.js"></script>
+    <script src="sidebar-settings.js"></script>
+    <script src="bookmark-editor.js"></script>
+    <script src="bookmark-dnd.js"></script>
+    <script src="native-bookmark-drag.js"></script>
+    <script src="bookmark-rename.js"></script>
+    <script src="overlay-scrollbar.js"></script>
+    <script src="content.js"></script>
     <script src="options.js"></script>
   </body>
 </html>
