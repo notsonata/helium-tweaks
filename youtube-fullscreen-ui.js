@@ -193,6 +193,7 @@
     });
 
     (document.body || document.documentElement).appendChild(hint);
+    addPathMarker(hint);
   }
 
   function scheduleScrollUpdate() {
