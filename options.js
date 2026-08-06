@@ -1,11 +1,12 @@
 "use strict";
 
-const SETTING_KEY = "youtubeSeparateSpaceEnabled";
+const SETTING_KEY = "videoSeparateSpaceEnabled";
+const LEGACY_SETTING_KEY = "youtubeSeparateSpaceEnabled";
 const STATUS_MESSAGE = "heliumYoutubeSpaceStatus";
 const EXIT_MESSAGE = "heliumYoutubeSpaceExit";
 const COMMAND_NAME = "toggle-bookmarks-sidebar";
 
-const toggle = document.getElementById("youtubeSeparateSpace");
+const toggle = document.getElementById("videoSeparateSpace");
 const saveStatus = document.getElementById("saveStatus");
 const videoStatus = document.getElementById("videoStatus");
 const exitVideo = document.getElementById("exitVideo");
@@ -22,8 +23,18 @@ async function initialize() {
   document.getElementById("version").textContent =
     `v${chrome.runtime.getManifest().version}`;
 
-  const settings = await chrome.storage.sync.get({ [SETTING_KEY]: true });
-  toggle.checked = settings[SETTING_KEY] !== false;
+  const settings = await chrome.storage.sync.get({
+    [SETTING_KEY]: null,
+    [LEGACY_SETTING_KEY]: true,
+  });
+  toggle.checked =
+    settings[SETTING_KEY] == null
+      ? settings[LEGACY_SETTING_KEY] !== false
+      : settings[SETTING_KEY] !== false;
+
+  if (settings[SETTING_KEY] == null) {
+    await chrome.storage.sync.set({ [SETTING_KEY]: toggle.checked });
+  }
 
   const platform = await chrome.runtime.getPlatformInfo();
   if (platform.os === "mac") {
@@ -44,8 +55,8 @@ toggle.addEventListener("change", async () => {
   await chrome.storage.sync.set({ [SETTING_KEY]: toggle.checked });
   showSaved(
     toggle.checked
-      ? "YouTube Space fullscreen enabled"
-      : "YouTube Space fullscreen disabled"
+      ? "Fullscreen video Spaces enabled"
+      : "Fullscreen video Spaces disabled"
   );
 });
 
