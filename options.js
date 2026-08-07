@@ -4,11 +4,12 @@ const VIDEO_SETTING_KEY = "videoSeparateSpaceEnabled";
 const LEGACY_VIDEO_SETTING_KEY = "youtubeSeparateSpaceEnabled";
 const STATUS_MESSAGE = "heliumYoutubeSpaceStatus";
 const EXIT_MESSAGE = "heliumYoutubeSpaceExit";
+const REFRESH_SHORTCUT_MESSAGE = "heliumRefreshShortcutLabel";
 const COMMAND_NAME = "toggle-bookmarks-sidebar";
 const PINNED_KEY = "heliumBmSidebar:pinned:v1";
 const COLLAPSED_KEY = "heliumBmSidebar:collapsed:v1";
 
-const SYNC_DEFAULTS = Object.freeze({
+const BOOKMARK_DEFAULTS = Object.freeze({
   bookmarkSidebarWidth: 210,
   bookmarkRowHeight: 30,
   bookmarkFontSize: 12,
@@ -16,12 +17,16 @@ const SYNC_DEFAULTS = Object.freeze({
   bookmarkShowFolderCounts: true,
   bookmarkRowHover: true,
   bookmarkScrollbarMode: "auto",
+});
 
+const AUTO_PIP_DEFAULTS = Object.freeze({
   autoPipEnabled: true,
   autoPipExitOnReturn: true,
   autoPipDelayMs: 500,
   autoPipExcludedSites: [],
+});
 
+const FULLSCREEN_DEFAULTS = Object.freeze({
   [VIDEO_SETTING_KEY]: true,
   videoSpaceControlClickEnabled: true,
   videoSpaceKeyboardEnabled: true,
@@ -29,8 +34,15 @@ const SYNC_DEFAULTS = Object.freeze({
   videoSpaceExcludedSites: [],
 });
 
+const SYNC_DEFAULTS = Object.freeze({
+  ...BOOKMARK_DEFAULTS,
+  ...AUTO_PIP_DEFAULTS,
+  ...FULLSCREEN_DEFAULTS,
+});
+
 const saveTimers = new Map();
 let statusTimer = null;
+let shortcutRefreshTimer = null;
 
 initialize().catch((error) => {
   showSaved(error?.message || "Settings could not be loaded", true);
@@ -64,7 +76,7 @@ async function initialize() {
   bindControls();
   setPlatformNote(platform);
 
-  await refreshShortcut();
+  await refreshShortcut({ broadcast: true });
   await refreshVideoStatus();
   statusTimer = setInterval(refreshVideoStatus, 1500);
 }
@@ -149,6 +161,19 @@ function bindControls() {
   bindSyncToggle("videoSpaceFallbackEnabled", "videoSpaceFallbackEnabled");
   bindSiteList("videoSpaceExcludedSites", "videoSpaceExcludedSites");
 
+  document.getElementById("resetBookmarkSettings").addEventListener(
+    "click",
+    resetBookmarkSettings
+  );
+  document.getElementById("resetPipSettings").addEventListener(
+    "click",
+    resetPipSettings
+  );
+  document.getElementById("resetFullscreenSettings").addEventListener(
+    "click",
+    resetFullscreenSettings
+  );
+
   document.getElementById("resetCollapsedFolders").addEventListener("click", async () => {
     await chrome.storage.local.remove(COLLAPSED_KEY);
     showSaved("All bookmark folders expanded");
@@ -163,14 +188,20 @@ function bindControls() {
   });
 
   document.getElementById("refreshShortcut").addEventListener("click", async () => {
-    await refreshShortcut();
+    await refreshShortcut({ broadcast: true });
     showSaved("Shortcut assignment refreshed");
   });
 
   document.getElementById("exitVideo").addEventListener("click", exitActiveVideo);
-  document.getElementById("resetAllSettings").addEventListener("click", resetAllSettings);
 
-  window.addEventListener("unload", () => clearInterval(statusTimer));
+  window.addEventListener("focus", scheduleShortcutRefresh);
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) scheduleShortcutRefresh();
+  });
+  window.addEventListener("unload", () => {
+    clearInterval(statusTimer);
+    clearTimeout(shortcutRefreshTimer);
+  });
 }
 
 function bindRange(id, key, suffix, onInput = null) {
@@ -232,6 +263,37 @@ function scheduleSyncSave(key, value, message) {
   );
 }
 
+function cancelScheduledSaves(keys) {
+  for (const key of keys) {
+    clearTimeout(saveTimers.get(key));
+    saveTimers.delete(key);
+  }
+}
+
+async function resetBookmarkSettings() {
+  cancelScheduledSaves(Object.keys(BOOKMARK_DEFAULTS));
+  await Promise.all([
+    chrome.storage.sync.set({ ...BOOKMARK_DEFAULTS }),
+    chrome.storage.local.remove([PINNED_KEY, COLLAPSED_KEY]),
+  ]);
+  populateBookmarks(BOOKMARK_DEFAULTS, { [PINNED_KEY]: false });
+  showSaved("Bookmark settings reset to defaults");
+}
+
+async function resetPipSettings() {
+  cancelScheduledSaves(Object.keys(AUTO_PIP_DEFAULTS));
+  await chrome.storage.sync.set({ ...AUTO_PIP_DEFAULTS });
+  populateAutoPip(AUTO_PIP_DEFAULTS);
+  showSaved("Picture-in-Picture settings reset to defaults");
+}
+
+async function resetFullscreenSettings() {
+  cancelScheduledSaves(Object.keys(FULLSCREEN_DEFAULTS));
+  await chrome.storage.sync.set({ ...FULLSCREEN_DEFAULTS });
+  populateFullscreen(FULLSCREEN_DEFAULTS);
+  showSaved("Fullscreen player settings reset to defaults");
+}
+
 async function exitActiveVideo() {
   const button = document.getElementById("exitVideo");
   const status = document.getElementById("videoStatus");
@@ -252,24 +314,34 @@ async function exitActiveVideo() {
   }
 }
 
-async function resetAllSettings() {
-  const confirmed = window.confirm(
-    "Reset all Helium Tweaks preferences? Browser bookmarks will not be deleted."
-  );
-  if (!confirmed) return;
-
-  await Promise.all([
-    chrome.storage.sync.set({ ...SYNC_DEFAULTS }),
-    chrome.storage.local.remove([PINNED_KEY, COLLAPSED_KEY]),
-  ]);
-  location.reload();
+function scheduleShortcutRefresh() {
+  clearTimeout(shortcutRefreshTimer);
+  shortcutRefreshTimer = setTimeout(() => {
+    refreshShortcut({ broadcast: true }).catch(() => {});
+  }, 120);
 }
 
-async function refreshShortcut() {
-  const commands = await chrome.commands.getAll();
-  const item = commands.find((command) => command.name === COMMAND_NAME);
+async function refreshShortcut({ broadcast = false } = {}) {
+  let label = null;
+
+  if (broadcast) {
+    try {
+      const response = await sendMessage({ type: REFRESH_SHORTCUT_MESSAGE });
+      if (response?.ok) label = String(response.label || "");
+    } catch {
+      label = null;
+    }
+  }
+
+  if (label == null) {
+    const commands = await chrome.commands.getAll();
+    const item = commands.find((command) => command.name === COMMAND_NAME);
+    label = item?.shortcut || "";
+  }
+
   document.getElementById("bookmarkShortcut").textContent =
-    item?.shortcut || "Not assigned";
+    label || "Not assigned";
+  return label;
 }
 
 async function refreshVideoStatus() {
