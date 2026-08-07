@@ -3,9 +3,7 @@ importScripts(
   "background.js",
   "bookmark-dnd-background.js",
   "bookmark-rename-background.js",
-  "fallback-background.js",
   "shortcut-background.js",
-  "settings-background.js",
   "auto-pip-background.js",
   "video-space-background.js"
 );
