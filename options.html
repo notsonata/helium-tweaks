@@ -4,13 +4,14 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Helium Tweaks settings</title>
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32.png">
     <link rel="stylesheet" href="options.css">
   </head>
   <body>
     <div class="app-shell">
       <aside class="settings-nav" aria-label="Settings sections">
         <div class="brand">
-          <span class="brand-mark" aria-hidden="true">H</span>
+          <img class="brand-icon" src="icons/icon-32.png" alt="" aria-hidden="true">
           <div>
             <strong>Helium Tweaks</strong>
             <span id="version">Settings</span>
@@ -22,7 +23,6 @@
           <a href="#shortcuts">Shortcuts</a>
           <a href="#pip">Picture-in-Picture</a>
           <a href="#fullscreen-player">Fullscreen player</a>
-          <a href="#maintenance">Maintenance</a>
         </nav>
 
         <p class="nav-note">
@@ -49,7 +49,10 @@
               <h2 id="bookmarks-heading">Bookmarks</h2>
               <p>Bookmarks are always enabled. These controls change the sidebar on every supported page.</p>
             </div>
-            <span class="status-pill">Always available</span>
+            <div class="section-tools">
+              <span class="status-pill">Always available</span>
+              <button class="button reset-button" id="resetBookmarkSettings" type="button">Reset defaults</button>
+            </div>
           </div>
 
           <div class="settings-card">
@@ -165,7 +168,7 @@
             <div class="shortcut-display">
               <div>
                 <strong>Open bookmarks and focus search</strong>
-                <small>Command: <code>toggle-bookmarks-sidebar</code></small>
+                <small>Command: <code>toggle-bookmarks-sidebar</code>. The sidebar badge updates when Settings regains focus.</small>
               </div>
               <kbd id="bookmarkShortcut">Not assigned</kbd>
             </div>
@@ -183,11 +186,14 @@
               <h2 id="pip-heading">Automatic Picture-in-Picture</h2>
               <p>Open PiP when leaving a playing-video tab without interfering with fullscreen transfers.</p>
             </div>
-            <label class="switch large-switch">
-              <input id="autoPipEnabled" type="checkbox">
-              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
-              <span class="sr-only">Enable automatic Picture-in-Picture</span>
-            </label>
+            <div class="section-tools">
+              <button class="button reset-button" id="resetPipSettings" type="button">Reset defaults</button>
+              <label class="switch large-switch">
+                <input id="autoPipEnabled" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                <span class="sr-only">Enable automatic Picture-in-Picture</span>
+              </label>
+            </div>
           </div>
 
           <div class="settings-card compact-card">
@@ -223,7 +229,7 @@
           </div>
 
           <p class="section-note warning">
-            Disable the separate Better Auto PiP extension. One extension cannot reliably cancel another extension's independent PiP request.
+            If another extension also provides automatic PiP, disable Auto PiP there to avoid duplicate or conflicting PiP requests.
           </p>
         </section>
 
@@ -234,11 +240,14 @@
               <h2 id="fullscreen-heading">Fullscreen player</h2>
               <p>Move the same video tab into a temporary popup window and let macOS place that window in its own Space.</p>
             </div>
-            <label class="switch large-switch">
-              <input id="videoSeparateSpace" type="checkbox">
-              <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
-              <span class="sr-only">Enable fullscreen video Space</span>
-            </label>
+            <div class="section-tools">
+              <button class="button reset-button" id="resetFullscreenSettings" type="button">Reset defaults</button>
+              <label class="switch large-switch">
+                <input id="videoSeparateSpace" type="checkbox">
+                <span class="switch-track" aria-hidden="true"><span class="switch-thumb"></span></span>
+                <span class="sr-only">Enable fullscreen video Space</span>
+              </label>
+            </div>
           </div>
 
           <div class="settings-card compact-card">
@@ -288,24 +297,6 @@
           <div class="card-actions">
             <button class="button danger" id="exitVideo" type="button" disabled>Exit active fullscreen video</button>
             <span class="status" id="videoStatus" role="status" aria-live="polite"></span>
-          </div>
-        </section>
-
-        <section class="settings-section" id="maintenance" aria-labelledby="maintenance-heading">
-          <div class="section-heading">
-            <div>
-              <p class="section-kicker">Recovery</p>
-              <h2 id="maintenance-heading">Maintenance</h2>
-              <p>Reset extension preferences without deleting browser bookmarks.</p>
-            </div>
-          </div>
-
-          <div class="settings-card danger-card">
-            <div>
-              <strong>Reset Helium Tweaks</strong>
-              <p>Restores default settings, unpins the sidebar, and expands all folders. Your bookmarks remain untouched.</p>
-            </div>
-            <button class="button danger" id="resetAllSettings" type="button">Reset all preferences</button>
           </div>
         </section>
       </main>
