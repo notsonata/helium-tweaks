@@ -1,7 +1,7 @@
 /*
   Keyboard routing for the bookmark sidebar.
 
-  The toolbar action now opens Helium Tweaks settings. Cmd/Ctrl+K remains the
+  The toolbar action opens Helium Tweaks settings. Cmd/Ctrl+K remains the
   direct bookmark-sidebar command, including the restricted-page fallback.
 */
 
@@ -10,6 +10,8 @@
 
   const PORT_NAME = "helium-bookmarks";
   const COMMAND_NAME = "toggle-bookmarks-sidebar";
+  const OPEN_MESSAGE = "heliumOpenBookmarksSidebar";
+  const REFRESH_SHORTCUT_MESSAGE = "heliumRefreshShortcutLabel";
   const FALLBACK_PAGE = "bookmarks.html";
   const OPEN_RETRY_MS = 50;
   const OPEN_RETRY_LIMIT = 40;
@@ -38,13 +40,29 @@
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    if (message?.type !== "heliumOpenBookmarksSidebar") return false;
+    if (!message || typeof message !== "object") return false;
     if (sender.id && sender.id !== chrome.runtime.id) return false;
 
-    routeSidebar(sender.tab)
-      .then(() => sendResponse({ ok: true }))
-      .catch((error) => sendResponse({ ok: false, error: error.message }));
-    return true;
+    if (message.type === OPEN_MESSAGE) {
+      routeSidebar(sender.tab)
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) => sendResponse({ ok: false, error: error.message }));
+      return true;
+    }
+
+    if (message.type === REFRESH_SHORTCUT_MESSAGE) {
+      broadcastShortcutLabel()
+        .then((label) => sendResponse({ ok: true, label }))
+        .catch((error) =>
+          sendResponse({
+            ok: false,
+            error: String(error?.message || "Could not refresh shortcut"),
+          })
+        );
+      return true;
+    }
+
+    return false;
   });
 
   async function routeSidebar(tab) {
@@ -101,17 +119,33 @@
     );
   }
 
+  async function readShortcutLabel() {
+    const commands = await chrome.commands.getAll();
+    const command = commands.find((item) => item.name === COMMAND_NAME);
+    return command?.shortcut || "";
+  }
+
   async function sendShortcutLabel(port, attempt) {
     try {
-      const commands = await chrome.commands.getAll();
-      const command = commands.find((item) => item.name === COMMAND_NAME);
-      if (!command?.shortcut) return;
-      postToPort(port, { type: "shortcut", label: command.shortcut });
+      const label = await readShortcutLabel();
+      postToPort(port, { type: "shortcut", label });
+      return label;
     } catch (error) {
       if (attempt > 0) {
         console.warn("[helium-tweaks] could not read bookmark shortcut:", error);
       }
+      return "";
     }
+  }
+
+  async function broadcastShortcutLabel() {
+    const label = await readShortcutLabel();
+    for (const [tabId, port] of connectedPorts) {
+      if (!postToPort(port, { type: "shortcut", label })) {
+        if (connectedPorts.get(tabId) === port) connectedPorts.delete(tabId);
+      }
+    }
+    return label;
   }
 
   function postToPort(port, message) {
